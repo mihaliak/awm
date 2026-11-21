@@ -1,0 +1,33 @@
+{
+  "fill": {
+    "solid": "extended-srgb:0.00000,0.00000,0.00000,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "Mark.svg",
+          "name": "AWM mark",
+          "glass": false,
+          "fill": {
+            "solid": "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+          }
+        }
+      ],
+      "specular": false,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

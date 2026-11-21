@@ -1,0 +1,50 @@
+/* Illustrations move automatically; a shared button pauses both. */
+#gap-preview {
+  --gap-offset: 6px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  /* Reserve 12px per side for half of the maximum 24pt gap. */
+  padding-inline: 27px;
+}
+
+#gap-preview > div { width: auto; }
+#gap-preview > div:first-child { transform: translateX(calc(-1 * var(--gap-offset))); }
+#gap-preview > div:last-child { transform: translateX(var(--gap-offset)); }
+
+.displays-card.feature-loop-still .external-monitor,
+.displays-card.feature-loop-still .mini-laptop,
+.displays-card.feature-loop-still .mini-laptop > div > i {
+  transition: none !important;
+}
+
+#gap-value { font-variant-numeric: tabular-nums; }
+
+#feature-motion-pause {
+  display: block;
+  width: fit-content;
+  min-height: 40px;
+  margin: 24px auto 0;
+  padding: 8px 14px;
+  border: 1px solid #44364f;
+  border-radius: 999px;
+  background: transparent;
+  color: #c9bed2;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#feature-motion-pause:hover { background: #231a2c; }
+#feature-motion-pause:focus-visible { outline: 2px solid #b3a1ff; outline-offset: 3px; }
+#feature-motion-pause[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .displays-card .external-monitor,
+  .displays-card .mini-laptop,
+  .displays-card .mini-laptop > div > i {
+    transition: none !important;
+  }
+}
+
+.feature-motion-control #feature-motion-pause{margin:0;padding:8px 0;min-height:40px;border:0;border-radius:0;background:none;font-size:12px;text-decoration:underline;text-underline-offset:4px;text-decoration-color:#5a4f69}

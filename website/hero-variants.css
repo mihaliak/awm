@@ -1,0 +1,124 @@
+/* The particle field, navigation, and scroll cue fade in together. */
+:root { --workspace-sheen: linear-gradient(90deg, #7a5cff 0%, #7a5cff 25%, #9d84ff 50%, #7a5cff 75%, #7a5cff 100%); }
+.title-accent { background-image: var(--workspace-sheen); }
+.brand-intro {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: center;
+  gap: 20px;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: env(safe-area-inset-top) 0 max(26px, env(safe-area-inset-bottom));
+  background: var(--bg);
+}
+.brand-intro > .site-header {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-left: max(32px, env(safe-area-inset-left));
+  padding-right: max(32px, env(safe-area-inset-right));
+}
+.brand-intro > .site-header:focus-within { opacity: 1 !important; }
+.brand-intro .brand-intro-content { width: min(1140px, calc(100% - 48px)); height: auto; margin: 0; align-self: center; display: flex; flex-direction: column; align-items: center; gap: 24px; overflow: visible; background: transparent; }
+.brand-intro .hero-wordmark { display: grid; place-items: center; width: 100%; max-width: 1100px; height: clamp(200px, 30vw, 340px); }
+.hero-wordmark .particle-fallback { font-size: clamp(35px, 7.5vw, 102px); line-height: 1.08; }
+.particle-wordmark > canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.intro-logo {
+  display: block;
+  width: 256px;
+  height: auto;
+  aspect-ratio: 28 / 12;
+  flex-shrink: 0;
+  object-fit: contain;
+  filter: brightness(0) invert(.92);
+}
+.intro-scroll {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 16px;
+  border-radius: 16px;
+  color: #aaa3b8;
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: .015em;
+  transition: color .2s;
+}
+.brand-intro > .site-header, .brand-intro-content, .intro-scroll {
+  animation: intro-arrive 900ms cubic-bezier(.25, .1, .35, 1) 450ms backwards;
+}
+.intro-scroll:hover { color: #eee9fa; }
+.intro-scroll:focus-visible { opacity: 1 !important; }
+.scroll-mouse { display: block; position: relative; width: 21px; height: 31px; border: 1px solid #b6a4ff75; border-radius: 12px; }
+.scroll-mouse > span { position: absolute; top: 6px; left: 8px; width: 3px; height: 6px; border-radius: 3px; background: #c5b4ff; animation: scroll-guide 2.2s cubic-bezier(.45, 0, .25, 1) 1800ms infinite; }
+@keyframes intro-arrive { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scroll-guide { 0%, 15% { opacity: 0; transform: translateY(0); } 30% { opacity: 1; } 75%, 100% { opacity: 0; transform: translateY(9px); } }
+.hero { padding-top: 76px; }
+.hero-copy > p { margin-top: 29px; }
+.hero-copy > .compatibility { margin-top: 22px; }
+.demo-area { margin-top: 62px; }
+.demo-modes { margin-bottom: 30px; }
+.site-footer { padding-bottom: 30px; }
+
+/* Violet lighting and fine dots are scoped to the opening screen. */
+[data-atmosphere="glow"] .brand-intro::before,
+[data-atmosphere="glow"] .brand-intro::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+[data-atmosphere="glow"] .brand-intro::before {
+  background:
+    radial-gradient(ellipse 65% 38% at 50% -5%, #7a5cff88, transparent 78%),
+    radial-gradient(ellipse 50% 42% at 0% 0%, #3a20e048, transparent 75%),
+    radial-gradient(ellipse 50% 38% at 100% 4%, #4a20c83b, transparent 75%);
+}
+[data-atmosphere="glow"] .brand-intro::after { background-image: radial-gradient(#d7caff5c .7px, transparent .9px); background-size: 9px 9px; mask-image: linear-gradient(#000b 0%, #0006 20%, transparent 64%); -webkit-mask-image: linear-gradient(#000b 0%, #0006 20%, transparent 64%); }
+
+@media (min-width: 1500px) { .hero { padding-top: 88px; } .demo-area { margin-top: 68px; } }
+@media (max-width: 700px) {
+  .brand-intro > .site-header { padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+  .brand-intro .hero-wordmark { height: clamp(175px, 36vw, 250px); }
+  .hero-wordmark .particle-fallback { font-size: clamp(31px, 8.5vw, 58px); }
+  .intro-logo { width: 200px; }
+  .hero { padding-top: 56px; }
+  .hero-copy > p { margin-top: 25px; }
+  .hero-copy > .compatibility { margin-top: 22px; }
+  .demo-area { margin-top: 46px; }
+  .demo-modes { margin-bottom: 26px; }
+}
+@media (max-width: 420px) {
+  .brand-intro > .site-header { padding-left: max(18px, env(safe-area-inset-left)); padding-right: max(18px, env(safe-area-inset-right)); }
+  .brand-intro .brand-intro-content { width: calc(100% - 36px); }
+  .intro-logo { width: 188px; }
+  .hero { padding-top: 48px; }
+}
+@media (min-height: 501px) and (max-height: 700px) {
+  .brand-intro .hero-wordmark { height: clamp(150px, calc(100vh - 350px), 300px); height: clamp(150px, calc(100svh - 350px), 300px); }
+  .hero-wordmark .particle-fallback { font-size: clamp(31px, 7.5vw, 64px); }
+}
+@media (max-height: 500px) {
+  .brand-intro { gap: 8px; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+  .brand-intro > .site-header { height: 64px; }
+  .brand-intro .brand-intro-content { gap: 8px; }
+  .brand-intro .hero-wordmark { height: clamp(100px, 30vh, 150px); height: clamp(100px, 30svh, 150px); }
+  .hero-wordmark .particle-fallback { font-size: clamp(26px, 7vw, 48px); }
+  .intro-logo { width: min(156px, 42vw, 46svh); }
+  .intro-scroll { flex-direction: row; gap: 9px; padding-block: 4px; }
+  .scroll-mouse { width: 19px; height: 27px; }
+  .scroll-mouse > span { left: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-intro > .site-header, .brand-intro-content, .intro-scroll, .scroll-mouse > span { animation: none; opacity: 1; transform: none; }
+}
+@media print {
+  .brand-intro { min-height: 0; padding-block: 24px; }
+  .brand-intro::before, .brand-intro::after, .intro-scroll { display: none; }
+  .brand-intro > .site-header, .brand-intro-content { animation: none; opacity: 1; }
+}

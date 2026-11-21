@@ -1,0 +1,16 @@
+# Another Window Management (AWM)
+
+> Another Window Management is a menu bar app for macOS 13 or later. It saves and restores window layouts across displays and positions windows with configurable keyboard shortcuts.
+
+## What it does
+
+- Save a named workspace with selected apps and windows, then restore it from the menu bar or a shortcut.
+- Move, resize, center, and fill windows. Configure sizing cycles and window gaps in points or as a percentage.
+- Associate workspaces with display arrangements and optionally restore them when connected displays change.
+- Back up layouts, shortcuts, and preferences by copying the local `~/.awm.yaml` file.
+
+## Explore AWM
+
+- [Features](https://awm.mihaliak.com/#features): Saved workspaces, window shortcuts, multiple displays, and local backups.
+- [Interactive demos](https://awm.mihaliak.com/#workspace-demo): Compare window layouts and see what the shortcuts do.
+- [Setup guide](https://awm.mihaliak.com/#setup): Installation steps and macOS window control permission.

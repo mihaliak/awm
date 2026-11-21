@@ -1,0 +1,19 @@
+#!/bin/sh
+
+LC_ALL=C
+export LC_ALL
+
+subject=$(git stripspace < "$1" | sed -n '1p')
+format='^(feat|fix|chore|refactor|docs|style|test|perf|ci|build)\([a-z0-9][a-z0-9._/-]*\)!?: [^[:space:]].*$'
+
+if ! printf '%s\n' "$subject" | grep -Eq "$format"; then
+    echo 'Use type(scope): description, for example feat(auth): add passkey login' >&2
+    echo 'Types: feat, fix, chore, refactor, docs, style, test, perf, ci, build. Use a lowercase scope.' >&2
+    exit 1
+fi
+
+case "$subject" in
+    *[A-Z]*|*.)
+        echo 'Write the subject in lowercase and leave off the final period.' >&2
+        exit 1 ;;
+esac

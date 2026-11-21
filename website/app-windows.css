@@ -1,0 +1,21 @@
+/* Window positioning belongs to app.js/showcase.js. Interiors are only bitmaps. */
+.app-window.native-app {
+  background: #f4f4f5;
+  border-color: #ffffffb0;
+  box-shadow: 0 .7cqw 2.2cqw #0005, 0 0 0 .05cqw #0003;
+  isolation: isolate;
+}
+.app-window.native-app-code,
+.app-window.native-app-terminal {
+  background: #1e1e1e;
+  border-color: #696764;
+}
+.native-screenshot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.native-screenshot image { image-rendering: auto; }
