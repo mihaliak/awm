@@ -1,0 +1,97 @@
+/* A single illustrative window. Mode visibility is controlled by the page. */
+#showcase-window {
+  left: 24%;
+  top: 14%;
+  width: 52%;
+  height: 62%;
+  opacity: 1;
+  transform: none;
+  transition: left .7s cubic-bezier(.22, 1, .36, 1),
+    top .7s cubic-bezier(.22, 1, .36, 1),
+    width .7s cubic-bezier(.22, 1, .36, 1),
+    height .7s cubic-bezier(.22, 1, .36, 1);
+}
+
+#showcase-window.showcase-still {
+  transition: none !important;
+}
+
+.showcase-keyboard {
+  position: absolute;
+  bottom: 2.5%;
+  left: 50%;
+  z-index: 12;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.showcase-keyboard kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid #544662;
+  border-bottom-width: 3px;
+  border-radius: 8px;
+  background: #19141fe8;
+  color: #d7cce2;
+  font: 18px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  box-shadow: 0 3px 9px #0003;
+  transition: background .09s, color .09s, transform .09s, box-shadow .09s;
+}
+
+.showcase-modifiers { display: flex; gap: 5px; margin-right: 4px; opacity: .65; }
+
+[data-showcase-key].is-active {
+  transform: translateY(2px);
+  background: #7a5cff;
+  color: #fff;
+  border-color: #a18aff;
+  box-shadow: 0 0 0 3px #7a5cff24, 0 3px 14px #7a5cff35;
+}
+
+#showcase-label { font-variant-numeric: tabular-nums; }
+#showcase-progress { color: #9d91a8; font-variant-numeric: tabular-nums; }
+
+#showcase-pause {
+  min-width: 72px;
+  min-height: 40px;
+  padding: 8px 13px;
+  border: 1px solid #44364f;
+  border-radius: 999px;
+  background: transparent;
+  color: #d7cce2;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#showcase-pause:hover { background: #231a2c; }
+#showcase-pause:focus-visible { outline: 2px solid #b3a1ff; outline-offset: 3px; }
+#showcase-pause[hidden] { display: none; }
+
+@media (max-width: 700px) {
+  .showcase-keyboard { gap: 5px; }
+  .showcase-keyboard kbd {
+    min-width: 26px;
+    height: 40px;
+    padding: 0 5px;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #showcase-window, [data-showcase-key] { transition: none !important; }
+}
+
+.showcase-caption{flex-direction:column;gap:7px;font-size:14px}
+.showcase-caption-line{display:flex;align-items:center;justify-content:center;gap:14px;min-height:40px}
+#showcase-label{min-width:135px;text-align:left}
+#showcase-progress{font-size:12px;min-width:33px;text-align:center}
+@media(max-width:420px){.showcase-caption-line{gap:10px}#showcase-label{min-width:127px;font-size:13px}}

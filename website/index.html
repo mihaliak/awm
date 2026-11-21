@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080809">
+<title>Another Window Management (AWM) — macOS Window Manager</title>
+<meta name="description" content="Save and restore window layouts across displays and move or resize windows with configurable shortcuts. AWM runs in the menu bar on macOS 13 or later.">
+<link rel="canonical" href="https://awm.mihaliak.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Another Window Management">
+<meta property="og:url" content="https://awm.mihaliak.com/">
+<meta property="og:title" content="Another Window Management (AWM) — macOS Window Manager">
+<meta property="og:description" content="Save and restore window layouts across displays and move or resize windows with configurable shortcuts. AWM runs in the menu bar on macOS 13 or later.">
+<meta property="og:image" content="https://awm.mihaliak.com/assets/workspace-hero.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="816">
+<meta property="og:image:height" content="418">
+<meta property="og:image:alt" content="Another Window Management's macOS menu bar popover showing three saved workspaces.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Another Window Management (AWM) — macOS Window Manager">
+<meta name="twitter:description" content="Save and restore window layouts across displays and move or resize windows with configurable shortcuts. AWM runs in the menu bar on macOS 13 or later.">
+<meta name="twitter:image" content="https://awm.mihaliak.com/assets/workspace-hero.png">
+<meta name="twitter:image:alt" content="Another Window Management's macOS menu bar popover showing three saved workspaces.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "@id": "https://awm.mihaliak.com/#software",
+  "name": "Another Window Management",
+  "alternateName": "AWM",
+  "url": "https://awm.mihaliak.com/",
+  "description": "Save and restore window layouts across displays and move or resize windows with configurable shortcuts. AWM runs in the menu bar on macOS 13 or later.",
+  "operatingSystem": "macOS 13 or later",
+  "applicationCategory": "UtilitiesApplication",
+  "image": "https://awm.mihaliak.com/assets/workspace-hero.png",
+  "featureList": [
+    "Save and restore workspaces across displays",
+    "Position and resize windows with configurable keyboard shortcuts",
+    "Adjust window sizing cycles and gaps",
+    "Back up workspaces and preferences in a local YAML file"
+  ]
+}
+</script>
+<link rel="icon" href="./assets/logo.svg" type="image/svg+xml"><link rel="stylesheet" href="./styles.css"><link rel="stylesheet" href="./app-windows.css"><link rel="stylesheet" href="./feature-loops.css"><link rel="stylesheet" href="./showcase.css"><link rel="stylesheet" href="./bento-system.css"><link rel="stylesheet" href="./product-setup.css"><link rel="stylesheet" href="./hero-variants.css"><link rel="stylesheet" href="./scroll-motion.css">
+<script src="./site-config.js" defer></script><script src="./app-windows.js" defer></script><script src="./comparison.js" defer></script><script src="./showcase.js" defer></script><script src="./app.js" defer></script><script src="./particles.js" defer></script><script src="./feature-loops.js" defer></script><script src="./repository.js" defer></script><script src="./scroll-motion.js" defer></script>
+</head><body data-hero="combined" data-atmosphere="glow">
+  <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M14 4v16M14 12h7"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16"/></symbol>
+    <symbol id="i-meet" viewBox="0 0 24 24"><rect x="3" y="6" width="12" height="12" rx="3"/><path d="m15 10 6-3v10l-6-3"/></symbol>
+    <symbol id="i-display" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 17v4m-5 0h10"/></symbol>
+    <symbol id="i-command" viewBox="0 0 24 24"><path d="M8 8H5a3 3 0 1 1 3-3v14a3 3 0 1 1-3-3h14a3 3 0 1 1-3 3V5a3 3 0 1 1 3 3H8Z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-replay" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  </defs></svg>
+
+<a class="skip-link" href="#main">Skip to content</a>
+<section class="brand-intro" aria-label="Another Window Management">
+<header class="site-header"><a class="brand" href="#" aria-label="Another Window Management home"><span class="brand-shape header-logo" aria-hidden="true"></span></a><div class="header-actions"><a class="github-button" id="github-link" data-repository-link hidden aria-label="View the project on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .8a11.3 11.3 0 0 0-3.6 22c.56.1.77-.24.77-.54v-2.1c-3.14.68-3.8-1.33-3.8-1.33-.51-1.31-1.26-1.66-1.26-1.66-1.03-.71.08-.7.08-.7 1.14.08 1.73 1.16 1.73 1.16 1.01 1.73 2.65 1.23 3.3.94.1-.73.4-1.23.72-1.51-2.5-.29-5.14-1.26-5.14-5.58 0-1.23.44-2.23 1.16-3.02-.12-.29-.5-1.43.11-2.98 0 0 .95-.3 3.1 1.16a10.8 10.8 0 0 1 5.64 0c2.15-1.46 3.09-1.16 3.09-1.16.62 1.55.24 2.69.12 2.98.72.79 1.16 1.79 1.16 3.02 0 4.33-2.64 5.29-5.16 5.57.41.35.77 1.04.77 2.1v3.11c0 .3.2.65.78.54A11.3 11.3 0 0 0 12 .8Z"/></svg><span>GitHub</span><span class="github-stars" id="github-stars" hidden><span aria-hidden="true">☆</span><span id="github-star-count"></span></span></a><button class="button button-small" data-install>Get started</button></div></header>
+  <div class="brand-intro-content particle-wordmark" id="hero-particle-wordmark" data-particle-wordmark>
+    <canvas id="hero-particle-canvas" aria-hidden="true"></canvas>
+    <div class="hero-wordmark" data-particle-text>
+      <p class="particle-fallback">Another Window<br>Management</p>
+    </div>
+    <img class="intro-logo" src="./assets/logo.svg" width="28" height="12" alt="" aria-hidden="true">
+  </div>
+  <a class="intro-scroll" href="#hero-title" aria-label="Scroll to explore window management"><span class="scroll-mouse" aria-hidden="true"><span></span></span><span>Scroll to explore</span></a>
+</section>
+
+<main id="main">
+<section class="hero" aria-labelledby="hero-title">
+<div class="hero-copy" data-reveal><h1 id="hero-title"><span class="title-accent">Your workspace,</span><br><span class="title-white">back in place.</span></h1><p>Position a window with a shortcut.<br>Restore your whole workspace in a click.</p><span class="compatibility">Another Window Management · macOS 13+</span></div>
+<div id="workspace-demo" class="demo-area" data-mode="compare" data-reveal>
+<div class="demo-modes" role="tablist" aria-label="Explore window management"><button id="compare-tab" role="tab" aria-selected="true" aria-controls="interactive-desktop compare-controls" data-mode="compare"><svg class="icon"><use href="#i-grid"/></svg>Compare workspaces</button><button id="shortcut-tab" role="tab" aria-selected="false" aria-controls="interactive-desktop shortcut-controls" tabindex="-1" data-mode="shortcut"><svg class="icon"><use href="#i-command"/></svg>Move a window</button></div>
+<div class="laptop"><div class="display-frame"><div class="desktop" id="interactive-desktop" role="group" tabindex="-1" aria-label="Window positioning demonstration" aria-describedby="demo-help">
+<div class="scene before-scene" aria-hidden="true"><div class="scene-wallpaper"></div><div class="window-layer"><div class="app-window browser-window" data-window="browser"></div>
+<div class="app-window code-window" data-window="code"></div>
+<div class="app-window notes-window" data-window="notes"></div>
+<div class="app-window calendar-window" data-window="calendar"></div>
+<div class="app-window files-window" data-window="files"></div>
+<div class="app-window music-window" data-window="music"></div>
+<div class="app-window terminal-window" data-window="terminal"></div></div></div>
+<div class="scene after-scene" data-layout="focus" aria-hidden="true"><div class="scene-wallpaper"></div><div class="window-layer"><div class="app-window browser-window" data-window="browser"></div>
+<div class="app-window code-window" data-window="code" hidden></div>
+<div class="app-window notes-window" data-window="notes"></div>
+<div class="app-window calendar-window" data-window="calendar" hidden></div>
+<div class="app-window files-window" data-window="files" hidden></div>
+<div class="app-window music-window" data-window="music"></div>
+<div class="app-window terminal-window" data-window="terminal" hidden></div></div></div>
+<div class="scene shortcut-scene" id="shortcut-scene" aria-hidden="true" hidden><div class="scene-wallpaper"></div><div class="window-layer"><div class="app-window browser-window" id="showcase-window"></div></div>
+<div class="showcase-keyboard" aria-hidden="true"><span class="showcase-modifiers"><kbd>⌃</kbd><kbd>⌥</kbd></span><kbd data-showcase-key="left">←</kbd><kbd data-showcase-key="right">→</kbd><kbd data-showcase-key="top">↑</kbd><kbd data-showcase-key="bottom">↓</kbd><kbd data-showcase-key="center">C</kbd><kbd data-showcase-key="enter">↵</kbd></div></div>
+<div class="mac-menu" aria-hidden="true"><img src="./assets/logo.svg" alt=""><svg class="icon"><use href="#i-display"/></svg><span>◉</span><span class="battery"></span><span>Mon 9:41</span></div><div class="camera-notch" aria-hidden="true"><i></i></div>
+<div class="comparison-tags" aria-hidden="true"><span>Before</span><span>After</span></div>
+<svg class="comparison-defs" width="0" height="0" aria-hidden="true"><defs>
+<clipPath id="before-clip" clipPathUnits="objectBoundingBox"><path id="comparison-before-path" d="M0 0H.5Q.5 .5 .5 1H0Z"/></clipPath>
+<clipPath id="after-clip" clipPathUnits="objectBoundingBox"><path id="comparison-after-path" d="M.5 0Q.5 .5 .5 1H1V0Z"/></clipPath>
+</defs></svg>
+<svg class="comparison-curve" id="comparison-curve-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true"><path id="comparison-curve" d="M.5 0Q.5 .5 .5 1" vector-effect="non-scaling-stroke"/></svg>
+<div id="comparison-handle" class="comparison-handle" aria-hidden="true"><span>‹ ›</span></div>
+<input id="comparison-range" class="comparison-range" type="range" min="0" max="100" step="1" value="50" aria-label="Compare crowded and organized windows" aria-valuetext="50 percent before, 50 percent organized" aria-describedby="demo-help">
+<div class="workspace-switcher screen-workspaces" role="group" aria-label="Workspace comparison"><button data-workspace="focus" aria-pressed="true"><svg class="icon"><use href="#i-grid"/></svg>Focus</button><button data-workspace="vibing" aria-pressed="false"><svg class="icon"><use href="#i-code"/></svg>Vibing</button><button data-workspace="planning" aria-pressed="false"><svg class="icon"><use href="#i-meet"/></svg>Planning</button></div>
+</div></div><div class="laptop-base"><span></span></div></div>
+<div class="demo-bottom">
+<div id="compare-controls" class="demo-control-panel" role="tabpanel" aria-labelledby="compare-tab"><p id="demo-help" class="demo-help">Drag to compare. Choose a workspace to see another setup.</p></div>
+<div id="shortcut-controls" class="demo-control-panel showcase-caption" role="tabpanel" aria-labelledby="shortcut-tab" hidden><div class="showcase-caption-line"><span id="showcase-label">Left · one third</span><span id="showcase-progress" aria-hidden="true">1 / 15</span><button id="showcase-pause" class="showcase-pause" type="button" aria-label="Pause shortcut showcase">Pause</button></div><p id="shortcut-help" class="demo-help">A few keystrokes. Every window in its place. Shortcuts are configurable.</p></div>
+<p id="demo-status" class="sr-only" aria-live="polite"></p><span class="demo-disclaimer">Illustrative layouts. After shows each workspace’s included windows.</span>
+</div></div>
+<div class="benefits-strip" data-reveal><span><svg class="icon"><use href="#i-command"/></svg>Configurable shortcuts</span><span><svg class="icon"><use href="#i-grid"/></svg>Saved workspaces</span><span><svg class="icon"><use href="#i-display"/></svg>Multiple displays</span></div>
+</section>
+<section id="features" class="features-section content-width" aria-labelledby="features-title"><div class="section-heading" data-reveal><h2 id="features-title">One window.<br>Or your whole world.</h2><p>A quick adjustment or a fresh start.<br>Keep your workspace working for you.</p></div>
+<article class="spotlight-card bento-card" data-reveal><div class="spotlight-copy"><svg class="feature-icon icon"><use href="#i-grid"/></svg><h3>Save the setup.<br>Skip the rearranging.</h3><p>Choose the apps and windows that belong together. Save the layout. Bring their available windows back when it’s time to get to work.</p><a class="inline-link" href="#workspace-demo" data-demo-link="compare">Compare workspace layouts</a><span class="feature-note">Some apps may need you to open an additional window.</span></div><div class="workspace-visual workspace-product">
+  <div class="menu-bar-fragment product-menu-bar" aria-hidden="true">
+    <img src="./assets/logo.svg" alt="" width="28" height="12">
+    <svg class="icon menu-wifi" viewBox="0 0 24 24"><path d="M3 8a14 14 0 0 1 18 0M6 11a9 9 0 0 1 12 0m-9 3a4.5 4.5 0 0 1 6 0"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
+    <svg class="menu-battery" viewBox="0 0 28 16"><rect x="1" y="3" width="22" height="10" rx="3"/><path d="M26 6v4"/><rect x="4" y="5.5" width="16" height="5" rx="1" fill="currentColor" stroke="none"/></svg>
+  </div>
+  <img class="product-screenshot workspace-screenshot" src="./assets/product/workspaces.png" width="640" height="966" loading="lazy" decoding="async" alt="Another Window Management’s menu: Focus selected, with Vibing and Planning workspaces and controls to save, update, and restore.">
+</div></article>
+<div class="feature-duo"><article class="spacing-card bento-card" data-reveal><svg class="feature-icon icon" aria-hidden="true"><use href="#i-command"/></svg><h3>Make your next move<br>a keystroke.</h3><p>Move, resize, center, or fill. Set the shortcuts and spacing that fit how you work.</p><a class="inline-link" href="#workspace-demo" data-demo-link="shortcut">Watch window shortcuts</a><div class="gap-preview" id="gap-preview" aria-hidden="true"><div><span>•••</span><i></i><i></i></div><div><span>•••</span><i></i><i></i></div></div><div class="feature-loop-caption"><span>Window gap</span><output id="gap-value">12 pt</output></div></article>
+<article class="displays-card bento-card" data-reveal data-reveal-delay="90"><svg class="feature-icon icon" aria-hidden="true"><use href="#i-display"/></svg><h3>Different displays.<br>Familiar surroundings.</h3><p>Move between display setups with optional automatic restoration. Missing displays fall back to your main screen.</p><div class="displays-illustration" aria-hidden="true"><div class="external-monitor"><div><i></i><i></i></div><span></span></div><div class="mini-laptop"><div><i></i><i></i></div><span></span></div></div><div class="feature-loop-caption display-caption"><span id="display-state">Desk setup</span><span class="display-caption-detail">Your layout follows along</span></div></article></div>
+<div class="feature-motion-control"><button id="feature-motion-pause" class="motion-control" type="button">Pause animations</button></div>
+<article class="local-card backup-card bento-card" data-reveal aria-labelledby="local-title"><div class="local-copy"><svg class="feature-icon icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6Z"/><path d="M14 3v5h5M10 13h5m-5 4h5M3 6v13"/></svg><h3 id="local-title">Your setup goes<br>where you go.</h3><p>One file holds your workspaces and preferences. Keep a copy, bring it to another Mac, and get back to a familiar setup.</p><div class="backup-benefits"><div><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h12v14H7Z"/><path d="M4 7H2v15h13v-2"/></svg><div><h4>Keep a backup.</h4><p>Copy your local YAML configuration alongside your other backups.</p></div></div><div><svg class="icon" aria-hidden="true"><use href="#i-replay"/></svg><div><h4>Bring it back.</h4><p>Restore that file to recover your workspaces, shortcuts, and preferences.</p></div></div></div></div><div class="backup-visual" aria-hidden="true"><div class="backup-shadow-file"></div><div class="backup-file"><header><span class="backup-file-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M5 2h9l5 5v15H5ZM14 2v6h5M8 12h8m-8 4h6"/></svg></span><div><strong>Your configuration</strong><span>Everything in one place</span></div><span class="yaml-badge">.yaml</span></header><div class="backup-workspaces"><span><svg class="icon"><use href="#i-grid"/></svg>Focus</span><span><svg class="icon"><use href="#i-code"/></svg>Vibing</span><span><svg class="icon"><use href="#i-meet"/></svg>Planning</span></div><div class="backup-settings"><span>Shortcuts</span><kbd>⌃</kbd><kbd>⌥</kbd><kbd>↵</kbd></div><div class="backup-settings"><span>Sizes &amp; spacing</span><div class="backup-mini-layout"><i></i><i></i><i></i></div></div><footer><svg class="icon"><use href="#i-shield"/></svg>Stored locally on your Mac</footer></div><div class="backup-caption"><span class="backup-caption-line"></span><svg class="icon"><use href="#i-check"/></svg><span>Easy to back up. Ready to restore.</span></div></div><div class="local-privacy"><svg class="icon"><use href="#i-shield"/></svg><p>Workspaces save app and layout information. Window titles, document paths, and browser URLs stay out.</p></div></article>
+</section>
+<section class="setup-section content-width" id="setup" aria-labelledby="setup-title">
+  <div class="section-heading" data-reveal><h2 id="setup-title">How to set up.</h2><p>Install the app, allow window control,<br>and save your first workspace.</p></div>
+  <div class="setup-panel bento-card" data-reveal>
+    <div class="setup-copy">
+      <ol class="setup-steps">
+        <li><h3>Install and open.</h3><p>Open GitHub Releases and download the app asset when available. Install Another Window Management in Applications. Open the app, then find its icon in your menu bar.</p><span class="setup-requirement">macOS 13 or later</span></li>
+        <li><h3>Allow window control.</h3><p>Choose <strong>Allow Window Control…</strong> in the app. Follow its instructions to enable Another Window Management in macOS settings.</p><p class="setup-detail">If it’s missing, use <strong>+</strong> to add the app shown in Finder.</p></li>
+        <li><h3>Save your first workspace.</h3><p>Once setup is complete, choose <strong>Let’s start</strong>. Arrange your windows, then choose <strong>Save Current Workspace</strong> and give it a name.</p></li>
+      </ol>
+      <a id="setup-release-link" class="button button-small" target="_blank" rel="noopener noreferrer" hidden>View releases</a>
+    </div>
+    <div class="setup-captures">
+      <figure><a class="setup-screenshot-link" href="./assets/product/window-control.png" target="_blank" rel="noopener" aria-label="View the window-control setup screenshot at full size"><img class="product-screenshot" src="./assets/product/window-control.png" width="640" height="910" loading="lazy" decoding="async" alt="The app’s first-launch menu with Allow Window Control and instructions to enable the app in Device Control and Data Access."></a><figcaption>Allow window control</figcaption></figure>
+      <figure><a class="setup-screenshot-link" href="./assets/product/setup-complete.png" target="_blank" rel="noopener" aria-label="View the setup confirmation screenshot at full size"><img class="product-screenshot" src="./assets/product/setup-complete.png" width="640" height="276" loading="lazy" decoding="async" alt="The app confirms successful setup and offers Let’s start."></a><figcaption>Ready for your first workspace</figcaption></figure>
+    </div>
+  </div>
+</section>
+<section class="details-section content-width" id="details" aria-labelledby="details-title"><div class="details-heading" data-reveal><h2 id="details-title">A few things<br>worth knowing.</h2><p>Small in your menu bar.<br>Useful throughout your day.</p></div><div class="faq-list" data-reveal data-reveal-delay="90">
+<details><summary>What do I need to get started?<svg class="icon"><use href="#i-plus"/></svg></summary><p>Another Window Management requires macOS 13 or later and permission to control windows. Open the app, choose Allow Window Control…, and follow the setup instructions.</p></details>
+<details><summary>Does a workspace restore every window?<svg class="icon"><use href="#i-plus"/></svg></summary><p>A workspace reopens apps and positions their available windows. Depending on the app, you may be asked to open another window. Workspaces do not reopen specific documents or browser URLs.</p></details>
+<details><summary>Can I change the shortcuts and sizes?<svg class="icon"><use href="#i-plus"/></svg></summary><p>Yes. Configure your keyboard shortcuts, size cycles, and gaps in points or percentages. The shortcuts in this website’s demo are illustrative; choose the combinations that work for you.</p></details>
+<details><summary>What happens when I disconnect a display?<svg class="icon"><use href="#i-plus"/></svg></summary><p>When you restore a workspace without one of its saved displays, those windows are fitted onto the primary display. You can also associate workspaces with display arrangements and enable automatic restoration.</p></details>
+<details><summary>Can I back up my settings?<svg class="icon"><use href="#i-plus"/></svg></summary><p>Yes. Workspaces and preferences are stored locally in a YAML file. Back up that file and restore it when needed.</p></details>
+</div></section>
+<section class="closing-section" data-reveal id="get-started"><span class="brand-shape closing-logo" aria-hidden="true"></span><h2>Everything has a place.<br>Find yours.</h2><button class="button" data-install>Set up on your Mac</button><span class="compatibility">Native macOS app. Right in your menu bar.</span></section>
+</main>
+<footer class="site-footer">
+  <div class="footer-top content-width" data-reveal><a class="brand" href="#" aria-label="Another Window Management home"><span class="brand-shape footer-logo" aria-hidden="true"></span></a><span>Less arranging. More doing.</span><nav aria-label="Footer"><a href="#setup">How to set up</a><a href="#details">Good to know</a><a href="#get-started" data-source-link>Get started</a></nav></div>
+  <p class="maker-credit content-width">Made with <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-9-5.6-9-11.2C3 4.9 8.8 3 12 7.1c3.2-4.1 9-2.2 9 2.7C21 15.4 12 21 12 21Z"/></svg><span class="sr-only">love</span> by <a href="https://mihaliak.com/?utm_source=awm&amp;utm_medium=website&amp;utm_campaign=awm">Andrej Mihaliak</a></p>
+  <p class="screenshot-credits content-width">Screenshots: <a href="https://support.apple.com/mac" target="_blank" rel="noopener noreferrer">Apple</a> (macOS apps), <a href="https://www.anthropic.com/" target="_blank" rel="noopener noreferrer">Anthropic</a> (terminal screenshot), and Another Window Management.</p>
+</footer>
+<dialog id="install-dialog" aria-labelledby="install-title"><button class="dialog-close icon-button" aria-label="Close installation guide"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button><img class="dialog-logo" src="./assets/logo.svg" alt="" width="56" height="24"><h2 id="install-title">Make room for your work.</h2><p class="dialog-description">Another Window Management runs quietly in your menu bar.</p><ol class="install-steps"><li><span>1</span><div><strong>Start with macOS 13 or later.</strong><p>Check GitHub Releases for an app download. When available, install it in Applications.</p></div></li><li><span>2</span><div><strong>Allow window control.</strong><p>Choose Allow Window Control… in the app, then follow its instructions to enable Another Window Management in macOS settings.</p></div></li><li><span>3</span><div><strong>Set up your first workspace.</strong><p>Arrange your windows, choose what to include, and save a workspace.</p></div></li></ol><a id="release-link" class="button" hidden>View releases</a><button class="text-button dialog-demo">Explore the interactive demo</button></dialog>
+</body></html>

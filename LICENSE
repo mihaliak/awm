@@ -1,0 +1,37 @@
+Another Window Management Noncommercial License
+
+Copyright (c) 2026 Andrej Mihaliak
+
+This license covers the Another Window Management software, documentation,
+and other materials in this repository to the extent that Andrej Mihaliak
+holds their copyright. Third-party software, screenshots, and other material
+are excluded. Their own licenses or rights holders govern their use. The MIT
+notice in website/comparison.js continues to apply to that component.
+
+Permission is granted to use, copy, build, fork, and modify the covered
+materials for noncommercial purposes. You may also distribute the covered
+materials and your modified versions, in source or compiled form, free of
+charge and for noncommercial purposes, subject to the conditions below.
+
+1. Commercial use, sale, and resale are prohibited. You may not distribute
+   or provide access to the covered materials or versions based on them in
+   exchange for payment or other consideration, including as part of a paid
+   product or service. Noncommercial purposes exclude use primarily intended
+   for commercial advantage or monetary compensation.
+
+2. Each distribution, including a fork or a modified build, must retain this
+   license and its copyright notice. Include the following credit in an easily
+   found place in the distributed source or documentation, such as a README,
+   About screen, or notices file:
+
+   Based on Another Window Management by Andrej Mihaliak.
+   https://github.com/mihaliak/awm
+
+These permissions apply only while you comply with this license. Any rights
+that applicable law gives you independently of this license are unaffected.
+
+The covered materials are provided as is, without any express or implied
+warranty, including warranties of merchantability, fitness for a particular
+purpose, and noninfringement. To the extent permitted by law, Andrej Mihaliak
+is not liable for claims, damages, or other liability arising from the use
+of or inability to use the covered materials.

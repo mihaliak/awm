@@ -1,0 +1,60 @@
+name: AWM
+options:
+  deploymentTarget:
+    macOS: '13.0'
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    MACOSX_DEPLOYMENT_TARGET: '13.0'
+    DEVELOPMENT_LANGUAGE: en
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+packages:
+  Yams:
+    url: https://github.com/jpsim/Yams.git
+    exactVersion: 6.2.2
+targets:
+  AWM:
+    productName: Another Window Management
+    type: application
+    platform: macOS
+    sources: [AWM]
+    dependencies:
+      - package: Yams
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mihaliak.awm
+        PRODUCT_MODULE_NAME: AWM
+        PRODUCT_NAME: Another Window Management
+        ASSETCATALOG_COMPILER_APPICON_NAME: AWM
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Another Window Management
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        MARKETING_VERSION: '1.0.0'
+        CURRENT_PROJECT_VERSION: '2'
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.mihaliak.awm.debug
+          INFOPLIST_KEY_CFBundleDisplayName: Another Window Management Debug
+  AWMTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [AWMTests]
+    dependencies:
+      - target: AWM
+    settings:
+      base:
+        MACOSX_DEPLOYMENT_TARGET: '14.0'
+        PRODUCT_BUNDLE_IDENTIFIER: com.mihaliak.awm.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  AWM:
+    build:
+      targets:
+        AWM: all
+    test:
+      targets:
+        - AWMTests
+      environmentVariables:
+        AWM_HOSTED_TESTS: '1'
