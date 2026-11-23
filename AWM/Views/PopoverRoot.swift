@@ -1,7 +1,5 @@
 import SwiftUI
 
-let awmDisplayName = "Another Window Management"
-
 enum PopoverPage: Hashable {
     case home, settings, shortcuts, sizing, displays, general, about, capture
     case preset(UUID)
@@ -51,12 +49,11 @@ private struct PopoverRoute {
 }
 
 struct PopoverRoot: View {
-    private static let horizontalInset: CGFloat = 14
+    private static let horizontalInset: CGFloat = 8
     private static let repository = URL(string: "https://github.com/mihaliak/awm")!
 
     @ObservedObject var model: AppModel
     let focusedPID: pid_t?
-    let anchorX: CGFloat
     let visibleFrame: CGRect
     let reducePanelMotion: Bool
     let allowWindowControl: () -> Void
@@ -94,7 +91,7 @@ struct PopoverRoot: View {
 
     private var surface: some View {
         let reducesMotion = reducePanelMotion || reduceMotion
-        let shape = NotchShape(anchorX: anchorX, visibleFrame: visibleFrame)
+        let shape = RoundedRectangle(cornerRadius: 19, style: .continuous)
         return VStack(spacing: 0) {
             header
                 .padding(.bottom, MenuMetrics.headerBottomInset)
@@ -111,11 +108,14 @@ struct PopoverRoot: View {
                 #endif
             }
         }
-        .padding(.top, NotchGeometry.topInset)
+        .padding(.top, PanelGeometry.topInset)
         .environment(\.menuReduceMotion, reducesMotion)
         .tint(MenuPalette.accent)
         .buttonStyle(MenuRowStyle())
         .background(shape.fill(MenuPalette.surface))
+        .overlay {
+            shape.strokeBorder(MenuPalette.border, lineWidth: 1).allowsHitTesting(false)
+        }
         .clipShape(shape)
         .scaleEffect(x: 1, y: revealed || reducesMotion ? 1 : 0.975, anchor: .top)
         .preferredColorScheme(.dark)
@@ -135,7 +135,7 @@ struct PopoverRoot: View {
     }
 
     private var fittedContent: some View {
-        PopoverContentLayout(screenWidth: visibleFrame.width) {
+        PopoverContentLayout(screenWidth: visibleFrame.width, minimumWidth: preferredWidth) {
             content
         }
     }
@@ -147,7 +147,7 @@ struct PopoverRoot: View {
                 .onGeometryChange(for: CGSize.self, of: { $0.size }) { size in
                     fitContent(CGSize(width: size.width,
                                       height: size.height + MenuMetrics.headerHeight + MenuMetrics.headerBottomInset
-                                          + NotchGeometry.topInset))
+                                          + PanelGeometry.topInset))
                 }
                 .modifier(PageReveal(surface: surface, entrance: showsSetupConfirmation ? .stationary : route.entrance))
                 // Keep content on the same leading edge while the panel resizes.
@@ -157,6 +157,18 @@ struct PopoverRoot: View {
     }
 
     private var page: PopoverPage { route.page }
+
+    private var showsInlineDraft: Bool {
+        guard page == .capture, captureSource == .home, let capture else { return false }
+        if case .save = capture.mode { return true }
+        return false
+    }
+
+    private var showsWorkspaceHeader: Bool { page == .home || showsInlineDraft }
+
+    private var preferredWidth: CGFloat {
+        showsWorkspaceHeader || page == .displays ? MenuMetrics.workspaceWidth : PanelGeometry.initialSize.width
+    }
     private var showsSetupConfirmation: Bool { model.windowControlStage == .confirmation }
 
     private var content: some View {
@@ -172,19 +184,10 @@ struct PopoverRoot: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Self.horizontalInset)
-        .padding(.bottom, 14)
+        .padding(.bottom, Self.horizontalInset)
     }
 
     @ViewBuilder private var workspaceContent: some View {
-        if page != .home {
-            Button {
-                if page == .capture { closeCapture() }
-                else { navigate(page.previous, .backward) }
-            } label: {
-                MenuRowLabel("Back", icon: "chevron.left")
-            }
-            .measuredMenuRegion("Back row")
-        }
         if !model.authorized {
             if page == .home {
                 WindowControlSetup(arrowAdvanced: permissionArrowAdvanced, allowWindowControl: allowWindowControl)
@@ -195,10 +198,7 @@ struct PopoverRoot: View {
             }
         }
         pageBody
-        if page == .home {
-            Divider()
-            footer
-        }
+        if page == .home { footer }
     }
 
     private var header: some View {
@@ -208,13 +208,56 @@ struct PopoverRoot: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 26, height: 13)
                 .accessibilityHidden(true)
-            Text(showsSetupConfirmation ? "Successfully setup" : page.title)
-                .font(.system(size: showsSetupConfirmation ? 15 : 13, weight: .semibold))
+                .measuredMenuRegion("AWM header mark")
+            if !showsSetupConfirmation && !showsWorkspaceHeader {
+                Button {
+                    if page == .capture { closeCapture() }
+                    else { navigate(page.previous, .backward) }
+                } label: {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .buttonStyle(MenuRowStyle(iconOnly: true))
+                .frame(width: 26)
+                .accessibilityLabel("Back")
+                .help("Back")
+                .measuredMenuRegion("Back")
+                .measuredMenuRegion("Back row")
+            }
+            let title = showsSetupConfirmation ? "Successfully setup" : showsWorkspaceHeader ? PopoverPage.home.title : page.title
+            Text(title)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(MenuPalette.secondary)
                 .lineLimit(1)
+                .layoutPriority(1)
                 .accessibilityAddTraits(.isHeader)
-                .measuredMenuRegion(showsSetupConfirmation ? "Successfully setup" : page.title)
+                .measuredMenuRegion(title)
+            if showsWorkspaceHeader, !showsSetupConfirmation, model.authorized {
+                let count = model.state.presets.count
+                Text("\(count) saved")
+                    .font(.system(size: 12))
+                    .monospacedDigit()
+                    .foregroundStyle(MenuPalette.secondary)
+                    .lineLimit(1)
+                    .accessibilityLabel("\(count) saved workspaces")
+                    .measuredMenuRegion("Saved workspace count")
+            }
+            Spacer(minLength: 4)
+            if showsWorkspaceHeader, !showsSetupConfirmation, model.authorized, let active = model.state.lastActive {
+                Button { model.activate(active) } label: {
+                    Label("Restore", systemImage: "arrow.clockwise")
+                        .font(.system(size: 13, weight: .medium))
+                        .fixedSize()
+                }
+                .buttonStyle(MenuRowStyle(centered: true))
+                .fixedSize(horizontal: true, vertical: false)
+                .disabled(showsInlineDraft)
+                .accessibilityLabel("Restore Active Workspace")
+                .help("Restore Active Workspace")
+                .measuredMenuRegion("Restore Active Workspace")
+            }
         }
-        .padding(.horizontal, Self.horizontalInset + 10)
+        .padding(.horizontal, Self.horizontalInset + 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: MenuMetrics.headerHeight)
         .measuredMenuRegion("Page header")
@@ -225,12 +268,16 @@ struct PopoverRoot: View {
         case .home:
             PresetList(model: model, capture: beginCapture) { navigate(.preset($0), .forward) }
         case .settings:
-            VStack(spacing: 3) {
+            VStack(spacing: 0) {
                 destination("Keyboard Shortcuts", icon: "keyboard", page: .shortcuts)
+                MenuSeparator(after: .destination(.shortcuts), before: .destination(.sizing))
                 destination("Window Sizing", icon: "arrow.up.left.and.arrow.down.right", page: .sizing)
+                MenuSeparator(after: .destination(.sizing), before: .destination(.displays))
                 destination("Display & Workspace Behavior", icon: "display.2", page: .displays)
+                MenuSeparator(after: .destination(.displays), before: .destination(.general))
                 destination("General Preferences", icon: "gearshape", page: .general)
             }
+            .menuCard()
         case .shortcuts:
             ShortcutSettings(model: model)
         case .sizing:
@@ -241,11 +288,11 @@ struct PopoverRoot: View {
             GeneralSettings(model: model)
         case .about:
             VStack(alignment: .leading, spacing: 9) {
-                Text(awmDisplayName)
+                Text(AWMIdentity.displayName)
                     .font(.headline)
-                    .measuredMenuRegion(awmDisplayName)
+                    .measuredMenuRegion(AWMIdentity.displayName)
                 Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MenuPalette.secondary)
                 Text("Arrange windows and restore saved workspaces from the menu bar.")
                     .popoverProse()
                 Link(destination: Self.repository) {
@@ -260,8 +307,14 @@ struct PopoverRoot: View {
             }
         case .capture:
             if let capture {
+                if showsInlineDraft {
+                    PresetList(model: model, capture: beginCapture,
+                               manage: { navigate(.preset($0), .forward) }, includesActions: false)
+                        .disabled(true)
+                        .environment(\.menuKeepsDisabledAppearance, true)
+                }
                 PresetCaptureView(capture: capture, outsidePolicy: model.state.preferences.outsidePolicy,
-                                  canSave: model.authorized && model.canSave,
+                                  canSave: model.authorized && model.canSave, inline: showsInlineDraft,
                                   cancel: closeCapture) { name, selected, icon in
                     if model.saveCapture(capture, name: name, selected: selected, icon: icon) { closeCapture() }
                 }
@@ -275,22 +328,44 @@ struct PopoverRoot: View {
                 MenuRowLabel(title, icon: icon)
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MenuPalette.secondary)
                     .accessibilityHidden(true)
             }
         }
+        .buttonStyle(MenuRowStyle(inCard: true, cardRow: .destination(page)))
         .measuredMenuRegion("Navigation: \(title)")
     }
 
     private var footer: some View {
-        VStack(spacing: 5) {
-            destination("Settings", icon: "gearshape", page: .settings)
-                .keyboardShortcut(",", modifiers: .command)
-            destination("About", icon: "info.circle", page: .about)
-            Button(action: quit) { MenuRowLabel("Quit", icon: "power") }
+        HStack(spacing: 0) {
+            Button { navigate(.settings, .forward) } label: {
+                footerLabel("Settings", icon: "gearshape")
+            }
+            .measuredMenuRegion("Navigation: Settings")
+            .keyboardShortcut(",", modifiers: .command)
+            Spacer(minLength: 0)
+            Button { navigate(.about, .forward) } label: {
+                footerLabel("About", icon: "info.circle")
+            }
+            .measuredMenuRegion("Navigation: About")
+            Spacer(minLength: 0)
+            Button(action: quit) { footerLabel("Quit", icon: "power") }
                 .measuredMenuRegion("Quit row")
                 .keyboardShortcut("q", modifiers: .command)
         }
+        .buttonStyle(MenuRowStyle(centered: true, height: 30))
+    }
+
+    private func footerLabel(_ title: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .foregroundStyle(MenuPalette.secondary)
+                .accessibilityHidden(true)
+            Text(title).lineLimit(1)
+        }
+        .font(.system(size: 12, weight: .medium))
+        .fixedSize(horizontal: true, vertical: false)
+        .measuredMenuRegion(title)
     }
 
     private func navigate(_ destination: PopoverPage, _ entrance: PageEntrance, leavingConfirmation: Bool = false) {
@@ -375,10 +450,12 @@ private struct PagePresentation: ViewModifier, Animatable {
 
 private struct PopoverContentLayout: Layout {
     let screenWidth: CGFloat
+    let minimumWidth: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let content = subviews.first else { return .zero }
-        let width = NotchGeometry.fittingWidth(content.sizeThatFits(.unspecified).width, screenWidth: screenWidth)
+        let width = PanelGeometry.fittingWidth(max(minimumWidth, content.sizeThatFits(.unspecified).width),
+                                               screenWidth: screenWidth)
         let height = content.sizeThatFits(ProposedViewSize(width: width, height: nil)).height
         return CGSize(width: width, height: ceil(height))
     }
@@ -390,13 +467,16 @@ private struct PopoverContentLayout: Layout {
 }
 
 enum MenuMetrics {
+    static let workspaceWidth: CGFloat = 376
     static let headerHeight: CGFloat = 38
-    static let headerBottomInset: CGFloat = 8
+    static let headerBottomInset: CGFloat = 4
+    static let workspaceRowHeight: CGFloat = 48
     static let rowHeight: CGFloat = 38
 }
 
 extension EnvironmentValues {
     @Entry var menuReduceMotion = false
+    @Entry var menuKeepsDisabledAppearance = false
 }
 
 extension View {
@@ -428,6 +508,8 @@ extension View {
 
 enum MenuMotion {
     case hover
+
+    static let rowHighlight = Animation.easeInOut(duration: 0.12)
 }
 
 #if DEBUG
@@ -457,6 +539,7 @@ private struct MenuPagePresentationKey: PreferenceKey {
 @MainActor
 final class MenuHoverProbe: ObservableObject {
     @Published var point: CGPoint?
+    @Published var focusPoint: CGPoint?
 }
 
 struct MenuMotionSample: Equatable {
@@ -501,12 +584,16 @@ private struct MeasuredMenuOpacity: ViewModifier, Animatable {
 private struct VerificationHoverTarget: View {
     @ObservedObject var probe: MenuHoverProbe
     let onHover: (Bool) -> Void
+    let onFocus: (Bool) -> Void
 
     var body: some View {
         GeometryReader { geometry in
             let frame = geometry.frame(in: .named("menu-verification"))
             let hovered = probe.point.map(frame.contains) ?? false
-            Color.clear.onChange(of: hovered, perform: onHover)
+            let focused = probe.focusPoint.map(frame.contains) ?? false
+            Color.clear
+                .onChange(of: hovered, perform: onHover)
+                .onChange(of: focused, perform: onFocus)
         }
         .allowsHitTesting(false)
     }
@@ -545,12 +632,134 @@ private struct MenuRegion: ViewModifier {
 #endif
 
 enum MenuPalette {
-    static let accent = Color(.sRGB, red: 157.0 / 255, green: 132.0 / 255, blue: 1, opacity: 1)
-    static let surface = Color(.sRGB, red: 0.115, green: 0.089, blue: 0.157, opacity: 1)
-    static let secondary = Color(.sRGB, red: 0.78, green: 0.73, blue: 0.84, opacity: 1)
-    static let selected = Color(.sRGB, red: 0.35, green: 0.21, blue: 0.76, opacity: 1)
-    static let hover = Color(.sRGB, red: 0.92, green: 0.88, blue: 1, opacity: 1)
+    static let accent = color(0x9D84FF)
+    static let surface = color(0x1D1728)
+    static let card = color(0x282035)
+    static let control = color(0x352943)
+    static let field = control
+    static let text = color(0xF7F2FF)
+    static let secondary = color(0xC7BAD6)
+    static let selected = color(0x5936C2)
+    static let selectedSecondary = color(0xF1E8FF)
+    static let border = color(0x49395C)
+    static let focus = color(0xD8C8FF)
+    static let hover = color(0xEBE0FF)
     static let hoverOpacity = 0.10
+
+    private static func color(_ hex: UInt32) -> Color {
+        Color(.sRGB, red: Double(hex >> 16) / 255, green: Double((hex >> 8) & 255) / 255,
+              blue: Double(hex & 255) / 255, opacity: 1)
+    }
+}
+
+enum MenuCardRow: Hashable {
+    case destination(PopoverPage)
+    case workspace(UUID)
+    case moveWorkspace(PresetMoveDirection)
+    case renameWorkspace, changeWorkspaceIcon, applyWorkspaceIcon, updateWorkspace
+}
+
+private struct MenuCardDivider: Hashable {
+    let preceding: MenuCardRow?
+    let following: MenuCardRow?
+
+    func isVisible(among highlighted: Set<MenuCardRow>) -> Bool {
+        ![preceding, following].compactMap { $0 }.contains(where: highlighted.contains)
+    }
+}
+
+private struct MenuCardDecoration: PreferenceKey {
+    var highlighted: Set<MenuCardRow> = []
+    var dividerBounds: [MenuCardDivider: Anchor<CGRect>] = [:]
+
+    static var defaultValue: Self { Self() }
+
+    static func reduce(value: inout Self, nextValue: () -> Self) {
+        let next = nextValue()
+        value.highlighted.formUnion(next.highlighted)
+        value.dividerBounds.merge(next.dividerBounds, uniquingKeysWith: { _, bounds in bounds })
+    }
+}
+
+struct MenuSeparator: View {
+    private let divider: MenuCardDivider?
+
+    init(after preceding: MenuCardRow? = nil, before following: MenuCardRow? = nil) {
+        divider = preceding == nil && following == nil ? nil
+            : MenuCardDivider(preceding: preceding, following: following)
+    }
+
+    var body: some View {
+        Rectangle()
+            .fill(divider == nil ? MenuPalette.border : .clear)
+            .frame(height: 1)
+            .anchorPreference(key: MenuCardDecoration.self, value: .bounds) { bounds in
+                MenuCardDecoration(dividerBounds: divider.map { [$0: bounds] } ?? [:])
+            }
+            .padding(.horizontal, 14)
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+    }
+}
+
+private struct MenuCardDividers: View {
+    let decoration: MenuCardDecoration
+    @Environment(\.menuReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GeometryReader { geometry in
+            ForEach(Array(decoration.dividerBounds.keys), id: \.self) { divider in
+                if let anchor = decoration.dividerBounds[divider] {
+                    let bounds = geometry[anchor]
+                    let visible = divider.isVisible(among: decoration.highlighted)
+                    Rectangle()
+                        .fill(MenuPalette.border)
+                        .opacity(visible ? 1 : 0)
+                        .animation(reduceMotion ? nil : MenuMotion.rowHighlight, value: visible)
+                        .frame(width: bounds.width, height: bounds.height)
+                        .position(x: bounds.midX, y: bounds.midY)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    func menuCardHighlight(_ row: MenuCardRow?, isHighlighted: Bool) -> some View {
+        transformPreference(MenuCardDecoration.self) { decoration in
+            if isHighlighted, let row { decoration.highlighted.insert(row) }
+        }
+    }
+
+    func menuCard(fill: Color = MenuPalette.card) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        return background(fill, in: shape)
+            .overlayPreferenceValue(MenuCardDecoration.self) { decoration in
+                MenuCardDividers(decoration: decoration)
+            }
+            .transformPreference(MenuCardDecoration.self) { $0 = .defaultValue }
+            .clipShape(shape)
+            .overlay { shape.strokeBorder(MenuPalette.border, lineWidth: 1).allowsHitTesting(false) }
+    }
+}
+
+struct MenuPrimaryLabel: View {
+    let title: String
+    let icon: String
+
+    init(_ title: String, icon: String) {
+        self.title = title
+        self.icon = icon
+    }
+
+    var body: some View {
+        Label(title, systemImage: icon)
+            .font(.system(size: 13, weight: .semibold))
+            .lineLimit(1)
+            .measuredMenuRegion(title)
+    }
 }
 
 struct MenuRowLabel: View {
@@ -568,7 +777,7 @@ struct MenuRowLabel: View {
         HStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(active ? .white : MenuPalette.secondary)
+                .foregroundStyle(active ? MenuPalette.text : MenuPalette.secondary)
                 .frame(width: 22)
                 .accessibilityHidden(true)
             Text(title)
@@ -586,7 +795,7 @@ struct ShortcutGlyph: View {
     var body: some View {
         Text(key.label)
             .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(active ? .white : MenuPalette.secondary)
+            .foregroundStyle(active ? MenuPalette.text : MenuPalette.secondary)
             .fixedSize()
     }
 }
@@ -594,6 +803,12 @@ struct ShortcutGlyph: View {
 struct MenuRowStyle: ButtonStyle {
     var emphasized = false
     var iconOnly = false
+    var centered = false
+    var primary = false
+    var outlined = false
+    var inCard = false
+    var cardRow: MenuCardRow?
+    var height: CGFloat = MenuMetrics.rowHeight
 
     func makeBody(configuration: Configuration) -> some View {
         Row(configuration: configuration, style: self)
@@ -605,36 +820,61 @@ struct MenuRowStyle: ButtonStyle {
         @Environment(\.isEnabled) private var enabled
         @Environment(\.isFocused) private var focused
         @Environment(\.menuReduceMotion) private var reduceMotion
+        @Environment(\.menuKeepsDisabledAppearance) private var keepsDisabledAppearance
         @State private var hovering = false
         #if DEBUG
         @Environment(\.menuHoverProbe) private var hoverProbe
+        @State private var verificationFocused = false
         #endif
+
+        private var foreground: Color {
+            if configuration.role == .destructive { return Color(red: 1, green: 0.59, blue: 0.59) }
+            return style.primary ? MenuPalette.surface : MenuPalette.text
+        }
+
+        private var shape: RoundedRectangle {
+            // The enclosing card clips the four outer corners of its rows.
+            RoundedRectangle(cornerRadius: style.inCard ? 0 : style.primary || style.outlined ? 11 : 8,
+                             style: .continuous)
+        }
+
+        private var focusVisible: Bool {
+            #if DEBUG
+            enabled && (focused || verificationFocused)
+            #else
+            enabled && focused
+            #endif
+        }
 
         var body: some View {
             configuration.label
-                .foregroundStyle(configuration.role == .destructive ? Color(red: 1, green: 0.59, blue: 0.59) : .white)
+                .foregroundStyle(foreground)
                 .padding(.horizontal, style.iconOnly ? 0 : 10)
-                .menuRowHeight()
-                .frame(maxWidth: .infinity, alignment: style.iconOnly ? .center : .leading)
+                .frame(height: style.height)
+                .frame(maxWidth: .infinity, alignment: style.iconOnly || style.centered || style.primary ? .center : .leading)
                 .background {
-                    let shape = RoundedRectangle(cornerRadius: 8)
-                    shape.fill(style.emphasized ? MenuPalette.selected : .clear)
+                    let fill = style.primary ? MenuPalette.accent : style.outlined ? MenuPalette.control : style.emphasized ? MenuPalette.selected : .clear
+                    shape.fill(fill)
+                        .overlay {
+                            if style.outlined { shape.strokeBorder(MenuPalette.border) }
+                        }
                         .overlay {
                             shape.fill(MenuPalette.hover)
                                 .menuOpacity(hovering && enabled ? MenuPalette.hoverOpacity : 0, motion: .hover)
-                                .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: hovering)
+                                .animation(reduceMotion ? nil : MenuMotion.rowHighlight, value: hovering)
                         }
                         .overlay {
-                            shape.fill(.white.opacity(configuration.isPressed && enabled ? 0.15 : 0))
+                            shape.fill(.white.opacity(configuration.isPressed && enabled ? 0.08 : 0))
                         }
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(MenuPalette.accent.opacity(focused ? 1 : 0), lineWidth: 2)
+                    shape.strokeBorder((style.primary ? MenuPalette.surface : MenuPalette.focus).opacity(focusVisible ? 1 : 0),
+                                       lineWidth: 2)
                         .allowsHitTesting(false)
                 }
                 .contentShape(Rectangle())
-                .opacity(enabled ? 1 : 0.48)
+                .menuCardHighlight(style.cardRow, isHighlighted: enabled && (hovering || configuration.isPressed || focusVisible))
+                .opacity(enabled || keepsDisabledAppearance ? 1 : 0.48)
                 .onHover { inside in
                     #if DEBUG
                     guard hoverProbe == nil else { return }
@@ -644,40 +884,10 @@ struct MenuRowStyle: ButtonStyle {
                 #if DEBUG
                 .background {
                     if let hoverProbe {
-                        VerificationHoverTarget(probe: hoverProbe) { hovering = $0 }
+                        VerificationHoverTarget(probe: hoverProbe) { hovering = $0 } onFocus: { verificationFocused = $0 }
                     }
                 }
                 #endif
-        }
-    }
-}
-
-private struct NotchShape: Shape {
-    let anchorX: CGFloat
-    let visibleFrame: CGRect
-
-    func path(in rect: CGRect) -> Path {
-        let left = rect.minX
-        let right = rect.maxX
-        let top = rect.minY + NotchGeometry.topInset
-        let bottom = max(top, rect.maxY)
-        let pointerX = anchorX - NotchGeometry.leadingEdge(anchorX: anchorX, visibleFrame: visibleFrame, width: rect.width)
-        let pointer = NotchGeometry.pointer(in: rect, anchorX: rect.minX + pointerX, bodyHeight: bottom - top)
-        let radius = pointer.radius
-        return Path { path in
-            path.move(to: CGPoint(x: left + radius, y: top))
-            path.addLine(to: CGPoint(x: pointer.base - pointer.halfWidth, y: top))
-            path.addLine(to: CGPoint(x: pointer.tip, y: rect.minY + NotchGeometry.topAir))
-            path.addLine(to: CGPoint(x: pointer.base + pointer.halfWidth, y: top))
-            path.addLine(to: CGPoint(x: right - radius, y: top))
-            path.addQuadCurve(to: CGPoint(x: right, y: top + radius), control: CGPoint(x: right, y: top))
-            path.addLine(to: CGPoint(x: right, y: bottom - radius))
-            path.addQuadCurve(to: CGPoint(x: right - radius, y: bottom), control: CGPoint(x: right, y: bottom))
-            path.addLine(to: CGPoint(x: left + radius, y: bottom))
-            path.addQuadCurve(to: CGPoint(x: left, y: bottom - radius), control: CGPoint(x: left, y: bottom))
-            path.addLine(to: CGPoint(x: left, y: top + radius))
-            path.addQuadCurve(to: CGPoint(x: left + radius, y: top), control: CGPoint(x: left, y: top))
-            path.closeSubpath()
         }
     }
 }

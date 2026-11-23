@@ -5,7 +5,7 @@ import Carbon
 import SwiftUI
 
 @MainActor
-private final class NotchPanel: NSPanel {
+private final class StatusPanel: NSPanel {
     var cancel: (() -> Void)?
     var pendingContentSize: CGSize?
 
@@ -16,21 +16,11 @@ private final class NotchPanel: NSPanel {
     }
 }
 
-enum NotchGeometry {
+enum PanelGeometry {
     static let initialSize = CGSize(width: 320, height: 390)
     static let maximumWidth: CGFloat = 680
     static let maximumHeight: CGFloat = 530
-    static let topAir: CGFloat = 5
-    static let topInset: CGFloat = topAir + 8
-
-    static func pointer(in rect: CGRect, anchorX: CGFloat, bodyHeight: CGFloat)
-        -> (tip: CGFloat, base: CGFloat, halfWidth: CGFloat, radius: CGFloat) {
-        let radius = min(15, rect.width / 4, bodyHeight / 2)
-        let halfWidth = min(8, (rect.width - 2 * radius) / 2)
-        let base = min(max(anchorX, rect.minX + radius + halfWidth), rect.maxX - radius - halfWidth)
-        let tip = min(max(anchorX, rect.minX), rect.maxX)
-        return (tip, base, halfWidth, radius)
-    }
+    static let topInset: CGFloat = 4
 
     static func fittingWidth(_ naturalWidth: CGFloat, screenWidth: CGFloat) -> CGFloat {
         min(max(ceil(naturalWidth), initialSize.width), maximumWidth, screenWidth)
@@ -65,8 +55,8 @@ final class StatusPopover: NSObject {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let model: AppModel
     private let windowControl: WindowControlHandoff
-    private var panel: NotchPanel?
-    private var closingPanel: NotchPanel?
+    private var panel: StatusPanel?
+    private var closingPanel: StatusPanel?
     private var resizeTask: Task<Void, Never>?
     private var targetFrame: CGRect?
     private var anchor: CGRect = .zero
@@ -98,14 +88,14 @@ final class StatusPopover: NSObject {
         self.windowControl = windowControl ?? WindowControlHandoff(openSettings: model.openPermissionSettings)
         super.init()
         #if DEBUG
-        if model.verificationCapture == nil { item.autosaveName = "AWM" }
+        if model.verificationCapture == nil { item.autosaveName = AWMIdentity.statusItemName }
         #else
-        item.autosaveName = "AWM"
+        item.autosaveName = AWMIdentity.statusItemName
         #endif
         item.button?.target = self
         item.button?.action = #selector(toggle)
-        item.button?.setAccessibilityLabel(awmDisplayName)
-        item.button?.toolTip = awmDisplayName
+        item.button?.setAccessibilityLabel(AWMIdentity.displayName)
+        item.button?.toolTip = AWMIdentity.displayName
         let image = NSImage(named: "MenuBarIcon")
         image?.isTemplate = true
         item.button?.title = ""
@@ -117,7 +107,7 @@ final class StatusPopover: NSObject {
         guard let button = item.button, let window = button.window, window.isVisible else { return nil }
         let rect = window.convertToScreen(button.convert(button.bounds, to: nil))
         let screen = window.screen ?? NSScreen.screens.first { !$0.frame.intersection(rect).isEmpty }
-        guard let screen, NotchGeometry.canAnchor(rect, on: screen.frame, visibleFrame: screen.visibleFrame) else {
+        guard let screen, PanelGeometry.canAnchor(rect, on: screen.frame, visibleFrame: screen.visibleFrame) else {
             return nil
         }
         return StatusAnchor(button: rect, screen: screen)
@@ -136,8 +126,8 @@ final class StatusPopover: NSObject {
         model.refreshSystemState()
         previousApp = model.lastExternalPID.flatMap { NSRunningApplication(processIdentifier: $0) }
 
-        let frame = NotchGeometry.frame(anchor: anchor, visibleFrame: visibleFrame, size: NotchGeometry.initialSize)
-        let panel = NotchPanel(contentRect: frame,
+        let frame = PanelGeometry.frame(anchor: anchor, visibleFrame: visibleFrame, size: PanelGeometry.initialSize)
+        let panel = StatusPanel(contentRect: frame,
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
         panel.isOpaque = false
@@ -148,12 +138,12 @@ final class StatusPopover: NSObject {
         panel.animationBehavior = .none
         panel.level = .popUpMenu
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient, .ignoresCycle]
-        panel.setAccessibilityLabel(awmDisplayName)
+        panel.setAccessibilityLabel(AWMIdentity.displayName)
         panel.cancel = { [weak self] in self?.dismiss(restoreFocus: true) }
         self.panel = panel
         let root = PopoverRoot(
             model: model, focusedPID: previousApp?.processIdentifier,
-            anchorX: anchor.midX, visibleFrame: visibleFrame, reducePanelMotion: reduceMotion(),
+            visibleFrame: visibleFrame, reducePanelMotion: reduceMotion(),
             allowWindowControl: { [weak self] in self?.allowWindowControl() },
             quit: { NSApp.terminate(nil) },
             fitContent: { [weak self, weak panel] size in
@@ -183,7 +173,7 @@ final class StatusPopover: NSObject {
         monitorDismissal(of: panel)
     }
 
-    private func scheduleFit(_ panel: NotchPanel, size: CGSize) {
+    private func scheduleFit(_ panel: StatusPanel, size: CGSize) {
         let scheduled = panel.pendingContentSize != nil
         panel.pendingContentSize = size
         guard !scheduled else { return }
@@ -195,8 +185,8 @@ final class StatusPopover: NSObject {
         }
     }
 
-    private func resize(_ panel: NotchPanel, size: CGSize) {
-        let frame = NotchGeometry.frame(anchor: anchor, visibleFrame: visibleFrame, size: size)
+    private func resize(_ panel: StatusPanel, size: CGSize) {
+        let frame = PanelGeometry.frame(anchor: anchor, visibleFrame: visibleFrame, size: size)
         guard frame != targetFrame else { return }
         let start = panel.frame.size
         let animate = targetFrame != nil && start.width != frame.width && !reduceMotion()
@@ -224,14 +214,14 @@ final class StatusPopover: NSObject {
                 let progress = 1 - pow(1 - fraction, 3)
                 let size = CGSize(width: start.width + (frame.width - start.width) * progress,
                                   height: start.height + (frame.height - start.height) * progress)
-                let step = NotchGeometry.frame(anchor: self.anchor, visibleFrame: self.visibleFrame, size: size)
+                let step = PanelGeometry.frame(anchor: self.anchor, visibleFrame: self.visibleFrame, size: size)
                 self.applyFit(panel, frame: step)
                 try? await Task.sleep(for: .milliseconds(16))
             }
         }
     }
 
-    private func applyFit(_ panel: NotchPanel, frame: CGRect) {
+    private func applyFit(_ panel: StatusPanel, frame: CGRect) {
         guard panel.frame != frame else { return }
         panel.setFrame(frame, display: true)
         #if DEBUG
@@ -245,7 +235,7 @@ final class StatusPopover: NSObject {
         windowControl.open()
     }
 
-    private func monitorDismissal(of shownPanel: NotchPanel) {
+    private func monitorDismissal(of shownPanel: StatusPanel) {
         let mouseDown: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         localClicks = NSEvent.addLocalMonitorForEvents(matching: mouseDown) { [weak self] event in
             guard let self, let panel = self.panel else { return event }
@@ -384,10 +374,10 @@ final class StatusPopover: NSObject {
         try await Task.sleep(for: .milliseconds(32))
         try await waitUntil("menu did not settle (page \(String(describing: presentedPage)), frame \(String(describing: panel?.frame)), target \(String(describing: targetFrame)))") {
             guard let panel else { return true }
-            guard let targetFrame else { return false }
+            guard let targetFrame, let header = verificationRegions["Page header"] else { return false }
             return presentedPage?.opacity == 1 && resizeTask == nil && panel.pendingContentSize == nil
                 && abs(targetFrame.width - panel.frame.width) <= 1 && abs(targetFrame.height - panel.frame.height) <= 1
-                && abs((verificationRegions["Page header"]?.height ?? 0) - MenuMetrics.headerHeight) < 0.01
+                && abs(header.width - panel.frame.width) <= 1 && abs(header.height - MenuMetrics.headerHeight) < 0.01
         }
     }
 
@@ -413,7 +403,8 @@ final class StatusPopover: NSObject {
         try await settleMenu()
     }
 
-    private func dispatchClick(_ name: String, at position: ClickPosition = .center) async throws -> FixtureClick {
+    private func dispatchClick(_ name: String, at position: ClickPosition = .center,
+                               events: [NSEvent.EventType] = [.leftMouseDown, .leftMouseUp]) async throws -> FixtureClick {
         guard let panel else { throw VerificationFailure(message: "panel unavailable for fixture click") }
         let rect = try await visibleRegion(name, in: panel)
         guard let view = panel.contentView else { throw VerificationFailure(message: "fixture host unavailable") }
@@ -430,7 +421,7 @@ final class StatusPopover: NSObject {
             throw VerificationFailure(message: "fixture click for \(name) lies outside the panel: \(rect)")
         }
         let began = ProcessInfo.processInfo.systemUptime
-        for type: NSEvent.EventType in [.leftMouseDown, .leftMouseUp] {
+        for type in events {
             guard let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
                                                  timestamp: ProcessInfo.processInfo.systemUptime,
                                                  windowNumber: panel.windowNumber, context: nil,
@@ -442,7 +433,7 @@ final class StatusPopover: NSObject {
         return FixtureClick(time: began, region: rect, pointInWindow: point)
     }
 
-    private func visibleRegion(_ name: String, in panel: NotchPanel) async throws -> CGRect {
+    private func visibleRegion(_ name: String, in panel: StatusPanel) async throws -> CGRect {
         guard let view = panel.contentView else { throw VerificationFailure(message: "fixture host unavailable") }
         func measure() {
             view.layoutSubtreeIfNeeded()
@@ -454,7 +445,9 @@ final class StatusPopover: NSObject {
             return verificationRegions[name] != nil && verificationRegions["Page header"] != nil
         }
         let rect = try region(name)
-        let bodyTop = try region("Page header").maxY + MenuMetrics.headerBottomInset
+        let header = try region("Page header")
+        if header.contains(rect) { return rect }
+        let bodyTop = header.maxY + MenuMetrics.headerBottomInset
         let bottom = view.bounds.height
         if !(bodyTop..<bottom).contains(rect.midY),
            let scroll = findScrollView(view) {
@@ -589,20 +582,25 @@ final class StatusPopover: NSObject {
         }
     }
 
-    func verifyFirstSetup(store: WorkspaceStore, output: URL?, handoffs: () -> [VerificationHandoff]) async throws {
+    func verifyFirstSetup(store: WorkspaceStore, output: URL?, designPreview: Bool = false,
+                          handoffs: () -> [VerificationHandoff]) async throws {
         isVerifying = true
         let bytes = try Data(contentsOf: store.url)
         let permissions = try FileManager.default.attributesOfItem(atPath: store.url.path)[.posixPermissions] as? NSNumber
         model.refreshSystemState()
         try check(model.windowControlStage == .required && panel == nil, "untrusted launch keeps the panel closed")
         try await openSetupFixture()
+        try verifyHeader(PopoverPage.home.title)
         try check(model.state.presets.isEmpty, "setup has an empty workspace list")
 
         let expectedHandoff: [VerificationHandoff] = [.settings, .finder(Bundle.main.bundleURL)]
         try await click("Allow Window Control…")
         try check(handoffs() == expectedHandoff && panel == nil, "setup hands off once and closes the notch")
         try await openSetupFixture()
-        if let output { try exportWebsitePanel("setup-required", to: output) }
+        if let output {
+            if designPreview { try exportPanel("11-window-control-setup", to: output) }
+            else { try exportWebsitePanel("setup-required", to: output) }
+        }
         try await click("Allow Window Control…")
         try check(handoffs() == expectedHandoff + expectedHandoff && panel == nil,
                   "retrying the handoff does not mark setup complete")
@@ -615,7 +613,11 @@ final class StatusPopover: NSObject {
                   && verificationRegions["Thanks for using AWM"] != nil && verificationRegions["Let’s start"] != nil
                   && verificationRegions["Save Current Workspace"] == nil && !ordinaryWindowIsVisible,
                   "first grant while closed shows confirmation in the notch when reopened")
-        if let output { try exportWebsitePanel("setup-complete", to: output) }
+        try verifyHeader("Successfully setup")
+        if let output {
+            if designPreview { try exportPanel("12-setup-confirmation", to: output) }
+            else { try exportWebsitePanel("setup-complete", to: output) }
+        }
 
         try sendKey(kVK_Escape, characters: "\u{1b}", to: original)
         try check(panel == nil && model.windowControlStage == .confirmation, "Escape closes the panel and preserves confirmation")
@@ -645,7 +647,7 @@ final class StatusPopover: NSObject {
                   && finalPermissions == permissions, "onboarding preserves workspace bytes and owner-only mode")
     }
 
-    func captureReady(focus: UUID, output: URL) async throws {
+    func captureReady(focus: UUID, output: URL, designPreview: Bool = false) async throws {
         isVerifying = true
         try await dispatchStatusAction()
         try await settleMenu()
@@ -656,7 +658,119 @@ final class StatusPopover: NSObject {
                   && verificationRegions["Save Current Workspace"] != nil
                   && verificationRegions["Update Active Workspace"] != nil,
                   "ready screenshot shows only Focus, Vibing, and Planning, with Focus active")
-        try exportWebsitePanel("app-ready", to: output)
+        guard designPreview else {
+            try exportWebsitePanel("app-ready", to: output)
+            return
+        }
+        let workspaces = try panelBitmap()
+        let restore = try region("Restore: Focus")
+        let manage = try region("Manage: Focus")
+        let selected = try panelColor(at: CGPoint(x: restore.midX, y: restore.midY), bitmap: workspaces)
+        for x in [restore.minX + 2, manage.maxX - 2] {
+            let top = try panelColor(at: CGPoint(x: x, y: restore.minY + 2), bitmap: workspaces)
+            let bottom = try panelColor(at: CGPoint(x: x, y: restore.maxY - 2), bitmap: workspaces)
+            try check(top != selected && bottom == selected,
+                      "active row's fill is clipped only at the card's top corners")
+        }
+        try exportPanel("01-workspaces", to: output, bitmap: workspaces)
+        try await captureCardRow("Restore: Vibing", named: "19-middle-workspace-restore-hover",
+                                 edges: .leading, output: output)
+        try await captureCardRow("Manage: Vibing", named: "20-middle-workspace-manage-hover",
+                                 edges: .trailing, output: output)
+        try await click("Save Current Workspace")
+        try check(presentedPage?.surface == .page(.capture) && verificationRegions["Workspace name"] != nil,
+                  "save action opens the draft in the live panel")
+        guard let editor = panel?.firstResponder as? NSTextView else {
+            throw VerificationFailure(message: "preview capture name field did not take focus")
+        }
+        editor.insertText("Planning Review", replacementRange: editor.selectedRange())
+        try await settleMenu()
+        try exportPanel("02-save-workspace", to: output)
+        try await click("Cancel")
+        try check(presentedPage?.surface == .page(.home) && model.state.presets.count == names.count,
+                  "canceling the draft returns home and keeps the sample workspaces")
+        try await click("Manage: Focus")
+        try check(presentedPage?.surface == .page(.preset(focus)), "ellipsis opens workspace management")
+        try exportPanel("03-manage-workspace", to: output)
+        try await click("Back")
+        try await click("Navigation: Settings")
+        try check(presentedPage?.surface == .page(.settings), "footer opens Settings")
+        try exportPanel("04-settings", to: output)
+        try await captureCardRow("Navigation: Keyboard Shortcuts", named: "13-first-row-hover",
+                                 roundedTop: true, output: output)
+        try await captureCardRow("Navigation: Window Sizing", named: "14-middle-row-hover", output: output)
+        try await captureCardRow("Navigation: General Preferences", named: "15-last-row-hover",
+                                 roundedBottom: true, output: output)
+        try await captureRowFocus("Navigation: Window Sizing", to: output)
+        try await click("Navigation: Display & Workspace Behavior")
+        try check(presentedPage?.surface == .page(.displays), "settings row opens display and workspace behavior")
+        try exportPanel("05-display-preferences", to: output)
+        try await click("Back")
+        try await click("Navigation: Keyboard Shortcuts")
+        try exportPanel("06-keyboard-shortcuts", to: output)
+        try await click("Back")
+        try await click("Navigation: Window Sizing")
+        try exportPanel("07-window-sizing", to: output)
+        try await click("Back")
+        try await click("Navigation: General Preferences")
+        try exportPanel("08-general-preferences", to: output)
+        try await click("Back")
+        try await click("Back")
+        try await click("Update Active Workspace")
+        try exportPanel("09-update-workspace", to: output)
+        try await click("Back")
+        try await click("Navigation: About")
+        try exportPanel("10-about", to: output)
+        try await click("Back")
+        for preset in model.state.presets where preset.id != focus { model.delete(preset.id) }
+        try await settleMenu()
+        try check(model.state.presets.map(\.id) == [focus], "singleton preview has one active workspace")
+        try await captureCardRow("Restore: Focus", named: "17-singleton-restore-hover",
+                                 roundedTop: true, roundedBottom: true, edges: .leading, output: output)
+        try await captureCardRow("Manage: Focus", named: "18-singleton-manage-hover",
+                                 roundedTop: true, roundedBottom: true, edges: .trailing, output: output)
+    }
+
+    private func captureCardRow(_ row: String, named name: String, roundedTop: Bool = false,
+                                roundedBottom: Bool = false, edges: Edge.Set = .horizontal,
+                                output: URL) async throws {
+        let frame = try region(row)
+        let baseline = try panelBitmap()
+        verificationHover.point = CGPoint(x: frame.midX, y: frame.midY)
+        defer { verificationHover.point = nil }
+        try await settleMenu()
+        let hovered = try panelBitmap()
+        func checkSample(_ point: CGPoint, highlighted: Bool) throws {
+            let change = try colorChange(at: point, from: baseline, to: hovered)
+            try check(highlighted ? change > 0.04 : change < 0.01,
+                      "\(row) \(highlighted ? "fills to" : "clips") card edge at \(point), color change \(change)")
+        }
+        for x in [edges.contains(.leading) ? frame.minX + 2 : nil,
+                  edges.contains(.trailing) ? frame.maxX - 2 : nil].compactMap({ $0 }) {
+            try checkSample(CGPoint(x: x, y: frame.midY), highlighted: true)
+            try checkSample(CGPoint(x: x, y: frame.minY + 2), highlighted: !roundedTop)
+            try checkSample(CGPoint(x: x, y: frame.maxY - 2), highlighted: !roundedBottom)
+        }
+        try exportPanel(name, to: output, bitmap: hovered)
+        verificationHover.point = nil
+        try await settleMenu()
+    }
+
+    private func captureRowFocus(_ row: String, to output: URL) async throws {
+        let frame = try region(row)
+        let baseline = try panelBitmap()
+        verificationHover.focusPoint = CGPoint(x: frame.midX, y: frame.midY)
+        defer { verificationHover.focusPoint = nil }
+        try await settleMenu()
+        let focused = try panelBitmap()
+        for point in [CGPoint(x: frame.midX, y: frame.minY + 0.75),
+                      CGPoint(x: frame.minX + 1.5, y: frame.midY)] {
+            let change = try colorChange(at: point, from: baseline, to: focused)
+            try check(change > 0.3, "\(row) shows a high-visibility focus border at \(point)")
+        }
+        try exportPanel("16-middle-row-focus", to: output, bitmap: focused)
+        verificationHover.focusPoint = nil
+        try await settleMenu()
     }
 
     private func checkAnimation(from previous: CGFloat, to current: CGFloat) throws {
@@ -676,7 +790,7 @@ final class StatusPopover: NSObject {
         }
         let top = min(anchor.minY, visibleFrame.maxY)
         let anchored = verificationResizeFrames.allSatisfy { frame in
-            let left = NotchGeometry.leadingEdge(anchorX: anchor.midX, visibleFrame: visibleFrame, width: frame.width)
+            let left = PanelGeometry.leadingEdge(anchorX: anchor.midX, visibleFrame: visibleFrame, width: frame.width)
             return abs(frame.minX - left) <= 1 && abs(frame.maxY - top) <= 1
         }
         try check(anchored, "resizing stays under the menu bar icon through every frame")
@@ -692,11 +806,15 @@ final class StatusPopover: NSObject {
         let bitmap: NSBitmapImageRep
 
         func textLuminance() -> Double {
+            Self.peakLuminance(in: text, bitmap: bitmap)
+        }
+
+        static func peakLuminance(in rect: CGRect, bitmap: NSBitmapImageRep) -> Double {
             let scale = Double(bitmap.pixelsWide) / bitmap.size.width
-            let left = max(0, Int(text.minX * scale))
-            let right = min(bitmap.pixelsWide, Int(ceil(text.maxX * scale)))
-            let top = max(0, Int(text.minY * scale))
-            let bottom = min(bitmap.pixelsHigh, Int(ceil(text.maxY * scale)))
+            let left = max(0, Int(rect.minX * scale))
+            let right = min(bitmap.pixelsWide, Int(ceil(rect.maxX * scale)))
+            let top = max(0, Int(rect.minY * scale))
+            let bottom = min(bitmap.pixelsHigh, Int(ceil(rect.maxY * scale)))
             guard left < right, top < bottom else { return 0 }
             var brightest = 0.0
             for y in top..<bottom {
@@ -713,6 +831,37 @@ final class StatusPopover: NSObject {
         }
     }
 
+    private func verifyHeader(_ title: String, hasBack: Bool = false, hasWorkspaceActions: Bool = false) throws {
+        let frame = try navigationFrame("header", text: "AWM header mark")
+        let mark = frame.text
+        let titleRect = try region(title)
+        let titleWidth = (title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 14, weight: .medium)]).width
+        let back = verificationRegions["Back row"]
+        try check(frame.header.contains(mark) && abs(mark.width - 26) < 0.25 && abs(mark.height - 13) < 0.25
+                  && frame.header.contains(titleRect) && mark.maxX < titleRect.minX
+                  && titleRect.width >= titleWidth - 2,
+                  "\(title) header fits the logo and its full title (header \(frame.header), mark \(mark), "
+                  + "title \(titleRect), intrinsic width \(titleWidth))")
+        if hasBack, let back {
+            try check(frame.header.contains(back) && mark.maxX < back.minX && back.maxX < titleRect.minX,
+                      "\(title) keeps Back between the logo and title")
+        } else {
+            try check(!hasBack && back == nil, "\(title) has the expected Back control state")
+        }
+        if hasWorkspaceActions {
+            let count = try region("Saved workspace count")
+            let restore = try region("Restore Active Workspace")
+            try check(frame.header.contains(count) && frame.header.contains(restore)
+                      && titleRect.maxX < count.minX && count.maxX < restore.minX,
+                      "\(title) fits the saved count and Restore action (header \(frame.header), count \(count), Restore \(restore))")
+        }
+        let background = CGRect(x: mark.minX, y: frame.header.minY + 3, width: mark.width, height: 4)
+        let dark = NavigationFrame.peakLuminance(in: background, bitmap: frame.bitmap)
+        let bright = frame.textLuminance()
+        let contrast = (bright + 0.05) / (dark + 0.05)
+        try check(bright >= 0.85 && contrast >= 4.5, "\(title) renders a white logo with at least 4.5:1 contrast")
+    }
+
     private func navigationFrame(_ name: String, text: String) throws -> NavigationFrame {
         guard let page = presentedPage, let panel else {
             throw VerificationFailure(message: "no presented destination for (name)")
@@ -724,7 +873,7 @@ final class StatusPopover: NSObject {
 
     private func verifyNavigation(_ name: String, click row: String, returnVia returnRow: String,
                                   from source: PopoverPage, to destination: PopoverPage,
-                                  direction: PageEntrance, sourceText: String = "Text: Back", text: String = "Text: Back")
+                                  direction: PageEntrance, sourceText: String, text: String)
         async throws {
         let before = try navigationFrame("before", text: sourceText)
         verificationPages = Array(verificationPages.suffix(1))
@@ -772,7 +921,7 @@ final class StatusPopover: NSObject {
         let fixedHeader = frames.map(\.frame).allSatisfy {
             abs($0.header.minX - before.header.minX) < 0.05 && abs($0.header.minY - before.header.minY) < 0.05
                 && abs($0.header.height - before.header.height) < 0.05 && abs($0.window.maxY - before.window.maxY) <= 1
-                && abs($0.window.minX - NotchGeometry.leadingEdge(anchorX: anchor.midX, visibleFrame: visibleFrame,
+                && abs($0.window.minX - PanelGeometry.leadingEdge(anchorX: anchor.midX, visibleFrame: visibleFrame,
                                                                  width: $0.window.width)) <= 1
         }
         try check(fixedHeader && panel?.isKeyWindow == true, "\(name) keeps the header and notch anchored and the panel key")
@@ -824,12 +973,101 @@ final class StatusPopover: NSObject {
                   "\(label) \(reduceMotion() ? "settles immediately" : "fades through intermediate opacity")")
     }
 
-    private func panelColor(at point: CGPoint) throws -> NSColor {
-        let bitmap = try panelBitmap()
+    private func panelColor(at point: CGPoint, bitmap: NSBitmapImageRep? = nil) throws -> NSColor {
+        let bitmap = try bitmap ?? panelBitmap()
         guard let color = bitmap.colorAt(x: Int(point.x * 2), y: Int(point.y * 2))?.usingColorSpace(.sRGB) else {
             throw VerificationFailure(message: "fixture row color unavailable")
         }
         return color
+    }
+
+    private func colorChange(at point: CGPoint, from baseline: NSBitmapImageRep, to current: NSBitmapImageRep) throws -> CGFloat {
+        let before = try panelColor(at: point, bitmap: baseline)
+        let after = try panelColor(at: point, bitmap: current)
+        return colorDistance(before, after)
+    }
+
+    private func colorDistance(_ before: NSColor, _ after: NSColor) -> CGFloat {
+        return max(abs(after.redComponent - before.redComponent),
+                   abs(after.greenComponent - before.greenComponent),
+                   abs(after.blueComponent - before.blueComponent))
+    }
+
+    private func verifyCardDividers(_ rows: [String], visible: [Bool], _ description: String) throws {
+        let frames = try rows.map(region)
+        let image = try panelBitmap()
+        let gaps = zip(frames, frames.dropFirst())
+        try check(visible.count == frames.count - 1 && gaps.allSatisfy {
+            abs($1.minY - $0.maxY - 1) < 0.01 && abs($1.minX - $0.minX) < 0.01
+        }, "\(description) keeps the one-point separator slots")
+        for ((upper, _), expected) in zip(gaps, visible) {
+            let y = upper.maxY + 0.25
+            let fill = try panelColor(at: CGPoint(x: upper.minX + 7, y: y), bitmap: image)
+            let edge = try panelColor(at: CGPoint(x: upper.minX + 0.25, y: y), bitmap: image)
+            let line = try panelColor(at: CGPoint(x: upper.minX + 20, y: y), bitmap: image)
+            let difference = colorDistance(fill, line)
+            try check(colorDistance(fill, edge) > 0.06, "\(description) retains the outer card border")
+            try check(expected ? difference > 0.06 : difference < 0.01,
+                      "\(description) \(expected ? "shows" : "blends") the separator at \(y) (color difference \(difference))")
+        }
+    }
+
+    private func waitForRowHighlight() async throws {
+        try await Task.sleep(for: .milliseconds(reduceMotion() ? 32 : 165))
+    }
+
+    private func verifyWorkspaceDividers(_ longName: String, disabled: Bool = false) async throws {
+        let rows = ["Restore: Focus", "Restore: Vibing", "Restore: \(longName)"]
+        try verifyCardDividers(rows, visible: [false, true], "active workspace at rest")
+        defer { verificationHover.point = nil }
+        for target in ["Restore: Vibing", "Manage: Vibing"] {
+            let frame = try region(target)
+            verificationHover.point = CGPoint(x: frame.midX, y: frame.midY)
+            try await waitForRowHighlight()
+            try verifyCardDividers(rows, visible: [false, disabled], "\(target) \(disabled ? "disabled" : "hovered")")
+        }
+        verificationHover.point = nil
+        try await waitForRowHighlight()
+        try verifyCardDividers(rows, visible: [false, true], "workspace pointer exit")
+    }
+
+    private func verifyNavigationDividers() async throws {
+        let rows = ["Keyboard Shortcuts", "Window Sizing", "Display & Workspace Behavior", "General Preferences"]
+            .map { "Navigation: \($0)" }
+        let frames = try rows.map(region)
+        let outerFrame = panel?.frame
+        let points = frames.map { CGPoint(x: $0.midX, y: $0.midY) }
+        defer {
+            verificationHover.point = nil
+            verificationHover.focusPoint = nil
+        }
+        try verifyCardDividers(rows, visible: [true, true, true], "settings at rest")
+        for (index, visible) in [(0, [false, true, true]), (1, [false, false, true]), (3, [true, true, false])] {
+            verificationHover.point = points[index]
+            try await waitForRowHighlight()
+            try verifyCardDividers(rows, visible: visible, "\(rows[index]) hover")
+        }
+        verificationHover.point = points[0]
+        try await Task.sleep(for: .milliseconds(40))
+        verificationHover.point = points[3]
+        try await waitForRowHighlight()
+        try verifyCardDividers(rows, visible: [true, true, false], "rapid settings hover")
+        verificationHover.point = nil
+        verificationHover.focusPoint = points[1]
+        try await waitForRowHighlight()
+        try verifyCardDividers(rows, visible: [false, false, true], "focused settings row")
+        verificationHover.focusPoint = nil
+        try await waitForRowHighlight()
+        try verifyCardDividers(rows, visible: [true, true, true], "after pointer and focus leave settings")
+        try check(try rows.map(region) == frames && panel?.frame == outerFrame,
+                  "divider highlights never shift card rows or resize the panel")
+        _ = try await dispatchClick(rows[0], events: [.leftMouseDown])
+        try await waitForRowHighlight()
+        try verifyCardDividers(rows, visible: [false, true, true], "pressed settings row")
+        _ = try await dispatchClick(rows[0], events: [.leftMouseUp])
+        try await settleMenu()
+        try check(presentedPage?.surface == .page(.shortcuts), "releasing the pressed row opens Keyboard Shortcuts")
+        try await click("Back")
     }
 
     private func verifyHover(on row: String, disabled: Bool = false) async throws {
@@ -860,7 +1098,7 @@ final class StatusPopover: NSObject {
         }
     }
 
-    private func verification(for panel: NotchPanel) -> PopoverVerification {
+    private func verification(for panel: StatusPanel) -> PopoverVerification {
         verificationRegions = [:]
         verificationMotion = []
         verificationPages = []
@@ -910,6 +1148,8 @@ final class StatusPopover: NSObject {
 
         try await click("Back")
         try checkOrder(["Vibing", "Focus", longName])
+        try verifyCardDividers(["Restore: Vibing", "Restore: Focus", "Restore: \(longName)"],
+                               visible: [false, false], "active workspace moved to the middle")
         try await dispatchStatusAction("dismiss the reordered menu")
         try await dispatchStatusAction("reopen the reordered menu")
         try await settleMenu()
@@ -921,6 +1161,8 @@ final class StatusPopover: NSObject {
                   "Move Up restores the original position and saved order")
         try await click("Back")
         try checkOrder(["Focus", "Vibing", longName])
+        try verifyCardDividers(["Restore: Focus", "Restore: Vibing", "Restore: \(longName)"],
+                               visible: [false, true], "active workspace moved back to the first row")
     }
 
     func verify(store: WorkspaceStore, focus: UUID, longName: String, snapshots: URL?,
@@ -948,28 +1190,32 @@ final class StatusPopover: NSObject {
         if reduceMotion() {
             try check(panel?.alphaValue == 1, "reduced-motion panel appears immediately")
         }
-        try await settleMenu()
         guard let original = panel else { throw VerificationFailure(message: "status panel unavailable") }
+        try await waitUntil("Workspaces did not fit its long fixture name") { original.frame.width > PanelGeometry.initialSize.width }
+        try await settleMenu()
         try check(original.isVisible && original.contentView is NSHostingView<PopoverRoot>,
-                  "status item opens the SwiftUI notch")
-        try check(original.isKeyWindow, "notch accepts keyboard focus")
+                  "status item opens the SwiftUI panel")
+        try check(original.isKeyWindow, "panel accepts keyboard focus")
         try check(presentedPage?.surface == .page(.home) && presentedPage?.offset == 0 && presentedPage?.opacity == 1,
                   "the initial Workspaces body opens at rest")
+        try verifyHeader(PopoverPage.home.title, hasWorkspaceActions: true)
         let top = min(anchor.minY, visibleFrame.maxY)
         try check(abs(original.frame.maxY - top) <= 1,
-                  "notch stays below the menu bar (\(original.frame.maxY), expected \(top))")
+                  "panel stays below the menu bar (\(original.frame.maxY), expected \(top))")
         let wide = original.frame.width
-        let homeRows = try ["Restore: Focus", "Restore: Vibing", "Manage: Focus", "Navigation: Settings", "Quit row"].map(region)
+        let homeRows = try ["Restore: Focus", "Restore: Vibing", "Manage: Focus"].map(region)
         let header = try region("Page header")
         let headerGap = homeRows[0].minY - header.maxY
-        try check(abs(header.height - 38) < 0.25 && homeRows.allSatisfy { abs($0.height - 38) < 0.25 }
-                  && abs(headerGap - 8) < 0.25,
-                  "heading has an 8-point bottom inset and all menu actions are 38 points tall (gap \(headerGap), rows \(homeRows.map(\.height)))")
+        try check(abs(header.height - MenuMetrics.headerHeight) < 0.25
+                  && homeRows.allSatisfy { abs($0.height - MenuMetrics.workspaceRowHeight) < 0.25 }
+                  && abs(headerGap - MenuMetrics.headerBottomInset) < 0.25,
+                  "heading and workspace rows match the menu’s spacing (gap \(headerGap), rows \(homeRows.map(\.height)))")
         let longTitle = try region("Text: \(longName)")
         let longTitleWidth = (longName as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width
-        try check(wide > NotchGeometry.initialSize.width && longTitle.height <= 18
+        try check(wide > PanelGeometry.initialSize.width && longTitle.height <= 18
                   && longTitle.width >= longTitleWidth - 2, "home fits the long workspace name on one line")
         snapshot("notch")
+        try await verifyWorkspaceDividers(longName)
         try await verifyHover(on: "Restore: Vibing")
         try await verifyHover(on: "Restore: Focus")
         verificationMotion = []
@@ -987,10 +1233,11 @@ final class StatusPopover: NSObject {
         verificationResizeFrames = []
         verificationFitRequests = []
         try await verifyNavigation("home-manage", click: "Manage: Focus", returnVia: "Back", from: .home, to: .preset(focus),
-                                   direction: .forward, sourceText: "Text: Vibing")
+                                   direction: .forward, sourceText: "Text: Vibing", text: "Text: Focus")
         let compact = original.frame.width
         try check(compact < wide && panel === original && original.isKeyWindow, "short workspace details shrink the same panel")
         try checkAnimation(from: wide, to: compact)
+        try verifyHeader(PopoverPage.preset(focus).title, hasBack: true)
         snapshot("manage-workspace")
         try await click("Change Icon…")
         try await click("Icon: \(WorkspaceIcon.star.title)")
@@ -1010,19 +1257,23 @@ final class StatusPopover: NSObject {
         try sendKey(kVK_Escape, characters: "\u{1b}", to: original)
         try check(model.recording == nil && panel === original, "Escape cancels shortcut recording")
         try await click("Update from Current Layout")
+        try verifyHeader(PopoverPage.capture.title, hasBack: true)
         snapshot("workspace-capture")
         try await click("Back")
         try check(presentedPage?.surface == .page(.preset(focus)), "canceling a capture returns to its actual source")
         try await verifyNavigation("manage-home", click: "Back", returnVia: "Manage: Focus", from: .preset(focus), to: .home,
-                                   direction: .backward, text: "Text: Vibing")
+                                   direction: .backward, sourceText: "Text: Focus", text: "Text: Vibing")
         try check(original.frame.width == wide, "returning home restores the width of its content")
 
         try await click("Settings")
+        try verifyHeader(PopoverPage.settings.title, hasBack: true)
         snapshot("settings")
+        try await verifyNavigationDividers()
         let settingsWidth = original.frame.width
         verificationResizeFrames = []
         verificationFitRequests = []
         try await click("Display & Workspace Behavior")
+        try verifyHeader(PopoverPage.displays.title, hasBack: true)
         let displayWidth = original.frame.width
         try check(displayWidth > settingsWidth, "display preferences expand to fit their labels and switches")
         try checkAnimation(from: settingsWidth, to: displayWidth)
@@ -1030,7 +1281,8 @@ final class StatusPopover: NSObject {
         let revealWidth = (revealLabel as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width
         let switchRow = try region("Switch: \(revealLabel)")
         let helperRow = try region("Switch group: Restore a workspace when displays change")
-        try check(switchRow.height == 38 && helperRow.height > 38, "the visible switch helper can add height")
+        try check(switchRow.height >= MenuMetrics.workspaceRowHeight && helperRow.height >= switchRow.height,
+                  "switch rows keep room for their visible description")
         snapshot("display-workspace-behavior")
         guard let longID = model.state.presets.first(where: { $0.name == longName })?.id else {
             throw VerificationFailure(message: "long workspace fixture unavailable")
@@ -1067,18 +1319,22 @@ final class StatusPopover: NSObject {
 
         try await click("Back")
         try await click("Window Sizing")
+        try verifyHeader(PopoverPage.sizing.title, hasBack: true)
         try await verifySizing(store: store, in: original)
         try await click("Back")
         try await verifyNavigation("settings-general", click: "General Preferences", returnVia: "Back", from: .settings, to: .general,
-                                   direction: .forward)
+                                   direction: .forward, sourceText: "Text: Keyboard Shortcuts", text: "Text: Launch at login")
+        try verifyHeader(PopoverPage.general.title, hasBack: true)
         let before = model.state.preferences.restoreOnLaunch
         try await click("Switch: Restore last active workspace on launch", at: .trailing)
         let reopened = try store.load().state
         try check(reopened.preferences.restoreOnLaunch != before, "native switch persists the changed preference")
         snapshot("general-preferences")
         try await verifyNavigation("general-settings", click: "Back", returnVia: "General Preferences",
-                                   from: .general, to: .settings, direction: .backward)
+                                   from: .general, to: .settings, direction: .backward,
+                                   sourceText: "Text: Launch at login", text: "Text: Keyboard Shortcuts")
         try await click("Keyboard Shortcuts")
+        try verifyHeader(PopoverPage.shortcuts.title, hasBack: true)
         let leftAction = ArrangementAction.left.label
         let rightAction = ArrangementAction.right.label
         let leftTitle = try region(leftAction)
@@ -1096,7 +1352,7 @@ final class StatusPopover: NSObject {
         let lastShortcut = "Shortcut: \(longName)"
         let lastShortcutBeforeScroll = try region(lastShortcut)
         let lastShortcutAfterScroll = try await visibleRegion(lastShortcut, in: original)
-        try check(original.frame.height <= NotchGeometry.maximumHeight
+        try check(original.frame.height <= PanelGeometry.maximumHeight
                   && lastShortcutAfterScroll.midY < original.frame.height
                   && lastShortcutAfterScroll.minY < lastShortcutBeforeScroll.minY,
                   "the capped panel scrolls to the last shortcut")
@@ -1123,6 +1379,7 @@ final class StatusPopover: NSObject {
         try await click("Back")
 
         try await click("About")
+        try verifyHeader(PopoverPage.about.title, hasBack: true)
         try check(verificationRegions[appName] != nil, "About displays the current app name")
         try check(original.frame.width < wide, "About fits in a compact popover")
         try check(verificationURLs.isEmpty, "About waits for link activation")
@@ -1151,7 +1408,7 @@ final class StatusPopover: NSObject {
         let oversized = String(repeating: "Wide ", count: 80).trimmingCharacters(in: .whitespaces)
         try check(model.rename(focus, to: oversized), "fixture can edit the workspace name while Home is open")
         try await settleMenu()
-        let cap = min(NotchGeometry.maximumWidth, visibleFrame.width)
+        let cap = min(PanelGeometry.maximumWidth, visibleFrame.width)
         try check(original.frame.width == cap && (try region("Text: \(oversized)").height) <= 18,
                   "an exceptionally long name reaches the width cap and stays on one line")
         snapshot("workspace-width-cap")
@@ -1174,7 +1431,7 @@ final class StatusPopover: NSObject {
         try await dispatchStatusAction("dismissal action dispatched")
         try await dispatchStatusAction("rapid reopen action dispatched")
         try await settleMenu()
-        try check(panel?.isVisible == true && panel?.isKeyWindow == true, "rapid reopen keeps the newest notch visible and key")
+        try check(panel?.isVisible == true && panel?.isKeyWindow == true, "rapid reopen keeps the newest panel visible and key")
 
         try await verifyWorkspaceMoves(store: store, focus: focus, longName: longName)
         try check(verificationRegions["Save Current Workspace…"] == nil
@@ -1182,19 +1439,27 @@ final class StatusPopover: NSObject {
                   "save and update actions use labels without trailing ellipses")
         try await click("Update Active Workspace")
         try check(verificationRegions["Choose Windows"] != nil, "Update Active Workspace opens the capture review")
+        try verifyHeader(PopoverPage.capture.title, hasBack: true)
         let beforeUpdate = try store.load().state.preset(focus)
+        try check(verificationRegions["Selected windows: 2"] != nil, "updating initially selects both saved windows")
         try await click("Window: 1", at: .leading)
+        try check(verificationRegions["Selected windows: 1"] != nil, "toggling one checkbox leaves one window selected")
         try await click("Update")
+        try check(presentedPage?.surface == .page(.home), "updating a capture returns home")
         let afterUpdate = try store.load().state.preset(focus)
         try check(presentedPage?.surface == .page(.home) && afterUpdate?.snapshot.windowCount == 1
                   && afterUpdate?.snapshot.members.first?.windows.first?.frame == beforeUpdate?.snapshot.members.first?.windows.first?.frame
                   && afterUpdate?.name == beforeUpdate?.name && afterUpdate?.icon == beforeUpdate?.icon,
                   "updating the active workspace keeps its name and icon and saves only the selected window")
         try await click("Save Current Workspace")
+        try verifyHeader(PopoverPage.home.title, hasWorkspaceActions: true)
+        try await verifyWorkspaceDividers(longName, disabled: true)
         guard let editor = panel?.firstResponder as? NSTextView else {
             throw VerificationFailure(message: "workspace name field did not take focus")
         }
         editor.insertText("Review", replacementRange: editor.selectedRange())
+        try await click("Windows and icon")
+        try await click("Workspace icon")
         try await click("Icon: \(WorkspaceIcon.video.title)")
         try await click("Window: 1", at: .leading)
         snapshot("new-workspace")
