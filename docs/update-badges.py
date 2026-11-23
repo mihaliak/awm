@@ -1,8 +1,10 @@
 """Refresh the README badges from a full AWM test run and GitHub Releases."""
 
 import argparse
+from hashlib import sha256
 import json
 from pathlib import Path
+import re
 import subprocess
 from xml.sax.saxutils import escape
 
@@ -60,6 +62,17 @@ def badge(label, value, description, color):
 '''
 
 
+def update_release_badge_link(readme, badge_path):
+    links = list(re.finditer(r"\[!\[Latest stable release\]\((?P<path>[^)\r\n]+)\)\]\(", readme))
+    if len(links) != 1:
+        raise SystemExit(f"Expected one latest release badge in README.md, found {len(links)}.")
+    link = links[0]
+    if not re.fullmatch(r"docs/(?:latest-release|release-badges/[0-9a-f]{16})\.svg", link["path"]):
+        raise SystemExit(f"Unexpected latest release badge path in README.md: {link['path']}")
+    start, end = link.span("path")
+    return readme[:start] + badge_path + readme[end:]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("result_bundle", nargs="?", help="Xcode test result bundle with coverage enabled")
@@ -68,14 +81,22 @@ def main():
     release = latest_release(args.repo)
     release_label = release or "none"
     release_badge = badge("latest release", release_label,
-                          f"Latest stable release: {release_label}", "#5744c5" if release else "#5a5864")
+                          f"Latest stable release: {release_label}", "#5744c5" if release else "#5a5864").encode("utf-8")
+    badge_path = DOCS / "release-badges" / f"{sha256(release_badge).hexdigest()[:16]}.svg"
+    readme_path = DOCS.parent / "README.md"
+    readme = readme_path.read_bytes().decode("utf-8")
+    updated_readme = update_release_badge_link(readme, badge_path.relative_to(DOCS.parent).as_posix())
     if args.result_bundle:
         covered, executable = app_coverage(args.result_bundle)
         percentage = f"{covered / executable:.1%}"
         coverage_badge = badge("app coverage", percentage,
                                f"App line coverage: {percentage} ({covered:,}/{executable:,})", "#5744c5")
         (DOCS / "coverage.svg").write_text(coverage_badge, encoding="utf-8")
-    (DOCS / "latest-release.svg").write_text(release_badge, encoding="utf-8")
+    (DOCS / "latest-release.svg").write_bytes(release_badge)
+    badge_path.parent.mkdir(exist_ok=True)
+    badge_path.write_bytes(release_badge)
+    if updated_readme != readme:
+        readme_path.write_bytes(updated_readme.encode("utf-8"))
 
 
 if __name__ == "__main__":

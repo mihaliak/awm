@@ -1,7 +1,7 @@
 <h1><img src="website/assets/logo.svg" alt="" width="63" height="27"> Another Window Management</h1>
 
 [![AWM app line coverage](docs/coverage.svg)](BUILDING.md#refresh-the-readme-badges)
-[![Latest stable release](docs/latest-release.svg)](https://github.com/mihaliak/awm/releases)
+[![Latest stable release](docs/release-badges/0e0c5b23cd732827.svg)](https://github.com/mihaliak/awm/releases)
 
 Another Window Management is a macOS menu bar utility for saving and restoring window layouts. It runs from the menu bar on macOS 13 or later.
 
