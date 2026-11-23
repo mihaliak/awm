@@ -41,7 +41,7 @@ func reducedMotionKeepsEveryPageFullyVisible(entrance: PageEntrance) {
     let screen = CGRect(x: -900, y: -720, width: 900, height: 720)
     let visible = CGRect(x: -900, y: -706, width: 900, height: 682)
     let button = CGRect(x: -170, y: -24, width: 28, height: 24)
-    #expect(NotchGeometry.canAnchor(button, on: screen, visibleFrame: visible))
+    #expect(PanelGeometry.canAnchor(button, on: screen, visibleFrame: visible))
 }
 
 @Test(arguments: [CGRect(x: 110, y: -28, width: 28, height: 24),
@@ -51,7 +51,7 @@ func reducedMotionKeepsEveryPageFullyVisible(entrance: PageEntrance) {
 func statusAnchorRejectsAnOffscreenEmptyOrMisplacedButton(button: CGRect) {
     let screen = CGRect(x: 0, y: 0, width: 900, height: 720)
     let visible = CGRect(x: 0, y: 0, width: 900, height: 696)
-    #expect(!NotchGeometry.canAnchor(button, on: screen, visibleFrame: visible))
+    #expect(!PanelGeometry.canAnchor(button, on: screen, visibleFrame: visible))
 }
 
 @Test func notchStaysBelowTheAnchorAndOnNegativeOriginDisplays() {
@@ -60,63 +60,41 @@ func statusAnchorRejectsAnOffscreenEmptyOrMisplacedButton(button: CGRect) {
     let right = CGRect(x: -32, y: 560, width: 28, height: 24)
     let center = CGRect(x: -464, y: 560, width: 28, height: 24)
 
-    let size = NotchGeometry.initialSize
-    #expect(NotchGeometry.frame(anchor: left, visibleFrame: visible, size: size)
+    let size = PanelGeometry.initialSize
+    #expect(PanelGeometry.frame(anchor: left, visibleFrame: visible, size: size)
             == CGRect(x: -900, y: 170, width: size.width, height: 390))
-    #expect(NotchGeometry.frame(anchor: right, visibleFrame: visible, size: size)
+    #expect(PanelGeometry.frame(anchor: right, visibleFrame: visible, size: size)
             == CGRect(x: -size.width, y: 170, width: size.width, height: 390))
-    #expect(NotchGeometry.frame(anchor: center, visibleFrame: visible, size: size).midX == center.midX)
+    #expect(PanelGeometry.frame(anchor: center, visibleFrame: visible, size: size).midX == center.midX)
 }
 
 @Test func notchFitsTheUsableAreaOfASmallDisplay() {
     let visible = CGRect(x: 0, y: 50, width: 320, height: 360)
     let anchor = CGRect(x: 275, y: 410, width: 28, height: 24)
-    let result = NotchGeometry.frame(anchor: anchor, visibleFrame: visible, size: CGSize(width: 580, height: 590))
+    let result = PanelGeometry.frame(anchor: anchor, visibleFrame: visible, size: CGSize(width: 580, height: 590))
     #expect(result == CGRect(x: 0, y: 56, width: 320, height: 354))
 }
 
 @Test(arguments: [CGFloat(0), 270, 510, 790])
 func notchWidthFitsContentWithinScreenAndDesignLimits(ideal: CGFloat) {
-    #expect(NotchGeometry.fittingWidth(ideal, screenWidth: 280) == 280)
-    #expect(NotchGeometry.fittingWidth(ideal, screenWidth: 320) == 320)
-    #expect(NotchGeometry.fittingWidth(ideal, screenWidth: 450) == min(max(ideal, 320), 450))
-    #expect(NotchGeometry.fittingWidth(ideal, screenWidth: 1_440) == min(max(ideal, 320), 680))
-    #expect(NotchGeometry.fittingWidth(ideal + 0.25, screenWidth: 1_440) == min(max(ceil(ideal + 0.25), 320), 680))
+    #expect(PanelGeometry.fittingWidth(ideal, screenWidth: 280) == 280)
+    #expect(PanelGeometry.fittingWidth(ideal, screenWidth: 320) == 320)
+    #expect(PanelGeometry.fittingWidth(ideal, screenWidth: 450) == min(max(ideal, 320), 450))
+    #expect(PanelGeometry.fittingWidth(ideal, screenWidth: 1_440) == min(max(ideal, 320), 680))
+    #expect(PanelGeometry.fittingWidth(ideal + 0.25, screenWidth: 1_440) == min(max(ceil(ideal + 0.25), 320), 680))
 }
 
 @Test(arguments: [CGFloat(-885), -690, -450, -215, -15])
-func notchPointerTracksItsAnchorAtEveryInterpolatedWidth(anchorX: CGFloat) {
+func panelStaysBelowTheMenuBarAcrossItsWidthRange(anchorX: CGFloat) {
     let visible = CGRect(x: -900, y: -120, width: 900, height: 720)
     let anchor = CGRect(x: anchorX - 14, y: 600, width: 28, height: 24)
     for width in stride(from: 320.0, through: 680.0, by: 12.5) {
-        let frame = NotchGeometry.frame(anchor: anchor, visibleFrame: visible,
+        let frame = PanelGeometry.frame(anchor: anchor, visibleFrame: visible,
                                         size: CGSize(width: width, height: 315))
-        let rect = CGRect(origin: .zero, size: frame.size)
-        let localX = anchorX - NotchGeometry.leadingEdge(anchorX: anchorX, visibleFrame: visible, width: frame.width)
-        let pointer = NotchGeometry.pointer(in: rect, anchorX: localX, bodyHeight: frame.height - NotchGeometry.topInset)
-        #expect(abs(pointer.tip + frame.minX - anchorX) < 0.001)
         #expect(frame.maxY == anchor.minY)
         #expect(frame.minX >= visible.minX && frame.maxX <= visible.maxX)
+        #expect(frame.minX...frame.maxX ~= anchorX)
     }
-}
-
-@Test(arguments: [CGFloat(0), 14, 160, 338, 352])
-func notchPointerTracksAnchorAndKeepsItsBaseBetweenTheCorners(anchorX: CGFloat) {
-    let bounds = CGRect(x: 0, y: 0, width: 352, height: 300)
-    let pointer = NotchGeometry.pointer(in: bounds, anchorX: anchorX, bodyHeight: 287)
-    #expect(pointer.tip == anchorX)
-    #expect(pointer.base - pointer.halfWidth >= bounds.minX + pointer.radius)
-    #expect(pointer.base + pointer.halfWidth <= bounds.maxX - pointer.radius)
-    if anchorX == 160 { #expect(pointer.base == anchorX) }
-}
-
-@Test func notchPointerFitsATightInsetFrame() {
-    let bounds = CGRect(x: 2, y: 2, width: 11, height: 5)
-    let pointer = NotchGeometry.pointer(in: bounds, anchorX: 0, bodyHeight: 1)
-    #expect(pointer.tip == bounds.minX)
-    #expect(pointer.radius == 0.5)
-    #expect(pointer.base - pointer.halfWidth == bounds.minX + pointer.radius)
-    #expect(pointer.base + pointer.halfWidth == bounds.maxX - pointer.radius)
 }
 
 @Test @MainActor func everyWorkspaceIconHasADrawableSystemSymbol() {

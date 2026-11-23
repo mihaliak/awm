@@ -4,61 +4,89 @@ struct PresetList: View {
     @ObservedObject var model: AppModel
     let capture: (UUID?) -> Void
     let manage: (UUID) -> Void
+    var includesActions = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if model.state.presets.isEmpty {
                 Text("Arrange your windows, then save their positions as a workspace.")
                     .font(.callout)
                     .foregroundStyle(MenuPalette.secondary)
                     .popoverProse()
-                    .padding(.horizontal, 10)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .menuCard()
             } else {
-                VStack(spacing: 3) {
-                    ForEach(model.state.presets) { preset in
+                let presets = model.state.presets
+                VStack(spacing: 0) {
+                    ForEach(Array(presets.enumerated()), id: \.element.id) { index, preset in
+                        if index > 0 {
+                            MenuSeparator(after: .workspace(presets[index - 1].id), before: .workspace(preset.id))
+                        }
                         row(preset)
                     }
                 }
+                .menuCard()
             }
 
-            Divider().padding(.vertical, 3)
-            Button { capture(nil) } label: {
-                MenuRowLabel("Save Current Workspace", icon: "plus")
-            }
-            .disabled(!model.authorized || !model.canSave)
-            if let active = model.state.lastActive {
-                Button { capture(active) } label: {
-                    MenuRowLabel("Update Active Workspace", icon: "arrow.clockwise")
+            if includesActions {
+                Button { capture(nil) } label: {
+                    MenuPrimaryLabel("Save Current Workspace", icon: "plus")
                 }
+                .buttonStyle(MenuRowStyle(centered: true, outlined: true, height: 38))
                 .disabled(!model.authorized || !model.canSave)
-                Button { model.activate(active) } label: {
-                    MenuRowLabel("Restore Active Workspace", icon: "clock.arrow.circlepath")
+
+                if let active = model.state.lastActive {
+                    Button { capture(active) } label: {
+                        MenuRowLabel("Update Active Workspace", icon: "arrow.clockwise")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(MenuRowStyle(centered: true, height: 30))
+                    .disabled(!model.authorized || !model.canSave)
                 }
-                .disabled(!model.authorized)
             }
         }
     }
 
     private func row(_ preset: Preset) -> some View {
         let active = model.state.lastActive == preset.id
+        let cardRow = MenuCardRow.workspace(preset.id)
         let key = model.shortcut(for: .preset(preset.id))
-        let detail = [active ? "Active workspace" : nil, key?.label].compactMap { $0 }.joined(separator: ", ")
+        let windows = preset.snapshot.windowCount
+        let windowCount = "\(windows) \(windows == 1 ? "window" : "windows")"
+        let detail = [windowCount, active ? "Active workspace" : nil, key?.label].compactMap { $0 }.joined(separator: ", ")
         return HStack(spacing: 0) {
             Button { model.activate(preset.id) } label: {
                 HStack(spacing: 8) {
-                    MenuRowLabel(preset.name, icon: preset.icon.symbol, active: active)
-                    Spacer(minLength: 4)
-                    if let key {
-                        ShortcutGlyph(key: key, active: active)
+                    Image(systemName: preset.icon.symbol)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(active ? MenuPalette.text : MenuPalette.secondary)
+                        .frame(width: 22)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(preset.name)
+                            .font(.system(size: 13, weight: active ? .medium : .regular))
+                            .lineLimit(1)
+                            .measuredMenuRegion("Text: \(preset.name)")
+                        Text(active ? "\(windowCount) · Active" : windowCount)
+                            .font(.system(size: 12))
+                            .foregroundStyle(active ? MenuPalette.selectedSecondary : MenuPalette.secondary)
+                            .lineLimit(1)
                     }
+                    .layoutPriority(1)
+                    Spacer(minLength: 4)
+                    if let key { ShortcutGlyph(key: key, active: active) }
                     if active {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(MenuPalette.text)
                             .accessibilityHidden(true)
                             .measuredMenuRegion("Active workspace: \(preset.name)")
                     }
                 }
+                .padding(.leading, 4)
             }
+            .buttonStyle(MenuRowStyle(inCard: true, cardRow: cardRow, height: MenuMetrics.workspaceRowHeight))
             .disabled(!model.authorized)
             .help(active ? "\(preset.name) · Active workspace" : "Restore \(preset.name)")
             .accessibilityLabel(preset.name)
@@ -68,16 +96,17 @@ struct PresetList: View {
             .measuredMenuRegion("Restore: \(preset.name)")
             Button { manage(preset.id) } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(active ? .white : MenuPalette.secondary)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(active ? MenuPalette.selectedSecondary : MenuPalette.secondary)
             }
-            .buttonStyle(MenuRowStyle(iconOnly: true))
-            .frame(width: 34)
+            .buttonStyle(MenuRowStyle(iconOnly: true, inCard: true, cardRow: cardRow, height: MenuMetrics.workspaceRowHeight))
+            .frame(width: 44)
             .help("Manage \(preset.name)")
             .accessibilityLabel("Manage \(preset.name)")
             .measuredMenuRegion("Manage: \(preset.name)")
         }
-        .background(active ? MenuPalette.selected : .clear, in: RoundedRectangle(cornerRadius: 9))
+        .background(active ? MenuPalette.selected : .clear, in: Rectangle())
+        .menuCardHighlight(cardRow, isHighlighted: active)
     }
 }
 
@@ -93,61 +122,43 @@ struct PresetDetails: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                MenuRowLabel(preset.name, icon: preset.icon.symbol)
-                    .font(.headline)
-                    .textSelection(.enabled)
-                    .help(preset.name)
-                Text(details)
-                    .font(.caption)
-                    .foregroundStyle(MenuPalette.secondary)
-                    .padding(.leading, 32)
-            }
-            .padding(.horizontal, 10)
-            if edit == .name {
-                PresetNameEditor(initialName: preset.name, cancel: { edit = .none }) { name in
-                    if model.rename(preset.id, to: name) { edit = .none }
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 3) {
+                    MenuRowLabel(preset.name, icon: preset.icon.symbol)
+                        .font(.headline)
+                        .textSelection(.enabled)
+                        .help(preset.name)
+                    Text(details)
+                        .font(.caption)
+                        .foregroundStyle(MenuPalette.secondary)
+                        .padding(.leading, 32)
                 }
-            } else {
-                Button { edit = .name } label: { MenuRowLabel("Rename…", icon: "pencil") }
-                    .disabled(!model.canSave)
+                .padding(10)
+                MenuSeparator()
+                workspaceActions
             }
-            if edit == .icon {
-                WorkspaceIconPicker(selection: $icon)
-                Button { edit = .none } label: { MenuRowLabel("Cancel", icon: "xmark") }
-                    .keyboardShortcut(.cancelAction)
-                Button {
-                    if model.setIcon(icon, for: preset.id) { edit = .none }
-                } label: {
-                    MenuRowLabel("Apply Icon", icon: "checkmark")
-                }
-                .buttonStyle(MenuRowStyle(emphasized: true))
-                .disabled(!model.canSave || icon == preset.icon)
-            } else {
-                Button {
-                    icon = preset.icon
-                    edit = .icon
-                } label: { MenuRowLabel("Change Icon…", icon: "square.grid.2x2") }
-                    .disabled(!model.canSave)
-            }
-            Button(action: update) {
-                MenuRowLabel("Update from Current Layout", icon: "arrow.clockwise")
-            }
-            .disabled(!model.authorized || !model.canSave)
+            .menuCard()
+
             if model.state.presets.count > 1, let index = model.state.index(ofPreset: preset.id) {
-                Divider()
                 let position = "Position \(index + 1) of \(model.state.presets.count)"
-                Text(position)
-                    .font(.caption)
-                    .foregroundStyle(MenuPalette.secondary)
-                    .padding(.horizontal, 10)
-                    .measuredMenuRegion(position)
-                moveButton("Move Up", icon: "arrow.up", direction: .up, position: position)
-                moveButton("Move Down", icon: "arrow.down", direction: .down, position: position)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(position)
+                        .font(.caption)
+                        .foregroundStyle(MenuPalette.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                        .measuredMenuRegion(position)
+                    moveButton("Move Up", icon: "arrow.up", direction: .up, position: position)
+                    MenuSeparator(after: .moveWorkspace(.up), before: .moveWorkspace(.down))
+                    moveButton("Move Down", icon: "arrow.down", direction: .down, position: position)
+                }
+                .menuCard()
             }
-            Divider()
+
             ShortcutRow(model: model, action: .preset(preset.id), title: "Workspace shortcut", icon: "keyboard")
-            Divider()
+                .padding(.top, 10)
+                .menuCard()
+
             if edit == .delete {
                 Text("Delete “\(preset.name)”?")
                     .font(.callout)
@@ -168,10 +179,56 @@ struct PresetDetails: View {
         }
     }
 
+    private var workspaceActions: some View {
+        VStack(spacing: 0) {
+            if edit == .name {
+                PresetNameEditor(initialName: preset.name, cancel: { edit = .none }) { name in
+                    if model.rename(preset.id, to: name) { edit = .none }
+                }
+                .padding(.vertical, 8)
+            } else {
+                Button { edit = .name } label: { MenuRowLabel("Rename…", icon: "pencil") }
+                    .buttonStyle(MenuRowStyle(inCard: true, cardRow: .renameWorkspace))
+                    .disabled(!model.canSave)
+            }
+            MenuSeparator(after: edit == .name ? nil : .renameWorkspace,
+                          before: edit == .icon ? nil : .changeWorkspaceIcon)
+            if edit == .icon {
+                WorkspaceIconPicker(selection: $icon)
+                    .padding(.top, 10)
+                Button { edit = .none } label: { MenuRowLabel("Cancel", icon: "xmark") }
+                    .buttonStyle(MenuRowStyle(inCard: true))
+                    .keyboardShortcut(.cancelAction)
+                Button {
+                    if model.setIcon(icon, for: preset.id) { edit = .none }
+                } label: {
+                    MenuRowLabel("Apply Icon", icon: "checkmark", active: true)
+                }
+                .buttonStyle(MenuRowStyle(emphasized: true, inCard: true, cardRow: .applyWorkspaceIcon))
+                .disabled(!model.canSave || icon == preset.icon)
+            } else {
+                Button {
+                    icon = preset.icon
+                    edit = .icon
+                } label: { MenuRowLabel("Change Icon…", icon: "square.grid.2x2") }
+                .buttonStyle(MenuRowStyle(inCard: true, cardRow: .changeWorkspaceIcon))
+                    .disabled(!model.canSave)
+            }
+            MenuSeparator(after: edit == .icon ? .applyWorkspaceIcon : .changeWorkspaceIcon,
+                          before: .updateWorkspace)
+            Button(action: update) {
+                MenuRowLabel("Update from Current Layout", icon: "arrow.clockwise")
+            }
+            .buttonStyle(MenuRowStyle(inCard: true, cardRow: .updateWorkspace))
+            .disabled(!model.authorized || !model.canSave)
+        }
+    }
+
     private func moveButton(_ title: String, icon: String, direction: PresetMoveDirection, position: String) -> some View {
         Button { model.movePreset(preset.id, direction: direction) } label: {
             MenuRowLabel(title, icon: icon)
         }
+        .buttonStyle(MenuRowStyle(inCard: true, cardRow: .moveWorkspace(direction)))
         .accessibilityLabel(title)
         .accessibilityValue(position)
         .disabled(!model.canSave || !model.state.canMovePreset(preset.id, direction: direction))
@@ -186,12 +243,15 @@ struct PresetDetails: View {
 
 struct WorkspaceIconPicker: View {
     @Binding var selection: WorkspaceIcon
+    var showsTitle = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Workspace icon")
-                .font(.callout.weight(.medium))
-                .accessibilityAddTraits(.isHeader)
+            if showsTitle {
+                Text("Workspace icon")
+                    .font(.callout.weight(.medium))
+                    .accessibilityAddTraits(.isHeader)
+            }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 34), spacing: 4)], spacing: 4) {
                 ForEach(WorkspaceIcon.allCases) { icon in
                     Button {
@@ -201,7 +261,7 @@ struct WorkspaceIconPicker: View {
                             .font(.system(size: 16, weight: .medium))
                     }
                     .buttonStyle(MenuRowStyle(emphasized: selection == icon, iconOnly: true))
-                    .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    .background(MenuPalette.control, in: RoundedRectangle(cornerRadius: 8))
                     .help(icon.title)
                     .accessibilityLabel(icon.title)
                     .accessibilityAddTraits(selection == icon ? .isSelected : [])
@@ -240,7 +300,7 @@ private struct PresetNameEditor: View {
             .padding(.horizontal, 10)
             Button(action: cancel) { MenuRowLabel("Cancel", icon: "xmark") }
                 .keyboardShortcut(.cancelAction)
-            Button { save(name) } label: { MenuRowLabel("Rename", icon: "checkmark") }
+            Button { save(name) } label: { MenuRowLabel("Rename", icon: "checkmark", active: true) }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(MenuRowStyle(emphasized: true))
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

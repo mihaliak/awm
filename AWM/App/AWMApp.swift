@@ -1,6 +1,11 @@
 import AppKit
 import ApplicationServices
 
+enum AWMIdentity {
+    static let displayName = "Another Window Management"
+    static let statusItemName = "AWM"
+}
+
 @main
 @MainActor
 enum AWMApp {
@@ -27,7 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["AWM_HOSTED_TESTS"] == "1" { return }
         let arguments = ProcessInfo.processInfo.arguments
         let captureWebsite = arguments.contains("--capture-website")
-        if captureWebsite || arguments.contains("--verify-menu-bar") {
+        let capturePreview = arguments.contains("--capture-design-preview")
+        if captureWebsite || capturePreview || arguments.contains("--verify-menu-bar") {
             Task {
                 do {
                     if captureWebsite {
@@ -36,6 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             throw CocoaError(.fileWriteInvalidFileName)
                         }
                         try await Self.verifyFirstSetup(screenshots: URL(fileURLWithPath: path, isDirectory: true))
+                    } else if capturePreview {
+                        guard let index = arguments.firstIndex(of: "--capture-design-preview"),
+                              let path = arguments.dropFirst(index + 1).first else {
+                            throw CocoaError(.fileWriteInvalidFileName)
+                        }
+                        try await Self.captureDesignPreview(in: URL(fileURLWithPath: path, isDirectory: true))
                     } else {
                         let environment = ProcessInfo.processInfo.environment
                         let reduceMotion = switch environment["AWM_VERIFY_REDUCE_MOTION"] {
@@ -81,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 snapshots: snapshots, handoffs: { handoffActions })
     }
 
-    static func verifyFirstSetup(screenshots: URL? = nil) async throws {
+    static func verifyFirstSetup(screenshots: URL? = nil, designPreview: Bool = false) async throws {
         if let screenshots {
             try FileManager.default.createDirectory(at: screenshots, withIntermediateDirectories: true)
         }
@@ -95,18 +107,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let status = StatusPopover(model: model, windowControl: handoff, reduceMotion: { true })
         defer { status.uninstall() }
-        try await status.verifyFirstSetup(store: fixture.store, output: screenshots, handoffs: { handoffActions })
+        try await status.verifyFirstSetup(store: fixture.store, output: screenshots,
+                                          designPreview: designPreview, handoffs: { handoffActions })
         let relaunched = fixture.makeModel(authorized: true)
         relaunched.refreshSystemState()
         guard relaunched.windowControlStage == .ready else {
             throw StatusPopover.VerificationFailure(message: "launching again should preserve completed setup")
         }
-        guard let screenshots else { return }
+        guard let screenshots, !designPreview else { return }
         status.uninstall()
         let focus = try fixture.addWorkspaces(thirdName: "Planning")
         let ready = StatusPopover(model: fixture.makeModel(authorized: true), windowControl: handoff, reduceMotion: { true })
         defer { ready.uninstall() }
         try await ready.captureReady(focus: focus, output: screenshots)
+    }
+
+    private static func captureDesignPreview(in output: URL) async throws {
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let fixture = try MenuFixture()
+        defer { fixture.remove() }
+        let focus = try fixture.addWorkspaces(thirdName: "Planning", designPreview: true)
+        let model = fixture.makeModel(authorized: true)
+        model.verificationCapture = fixture.previewSnapshot
+        let status = StatusPopover(model: model, reduceMotion: { true })
+        defer { status.uninstall() }
+        try await status.captureReady(focus: focus, output: output, designPreview: true)
+        status.uninstall()
+        try await verifyFirstSetup(screenshots: output, designPreview: true)
     }
 
     private struct MenuFixture {
@@ -138,20 +165,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return model
         }
 
-        func addWorkspaces(thirdName: String, includeShortcut: Bool = false) throws -> UUID {
+        func addWorkspaces(thirdName: String, includeShortcut: Bool = false, designPreview: Bool = false) throws -> UUID {
             let initial = try store.load()
             var state = initial.state
-            let snapshot = snapshot
+            let snapshot = designPreview ? previewSnapshot : snapshot
             let focus = try state.save(name: "Focus", snapshot: snapshot, icon: .layout)
-            _ = try state.save(name: "Vibing", snapshot: snapshot, icon: .code)
-            _ = try state.save(name: thirdName, snapshot: snapshot, icon: .video)
+            let smaller = PresetCapture(snapshot, preferences: state.preferences)
+            let vibing = designPreview ? smaller.selecting(Set(snapshot.members[0].windows.map(\.id))) : snapshot
+            let planning = designPreview ? smaller.selecting(Set(snapshot.members[1].windows.map(\.id))) : snapshot
+            _ = try state.save(name: "Vibing", snapshot: vibing, icon: .code)
+            _ = try state.save(name: thirdName, snapshot: planning, icon: .video)
             state.lastActive = focus.id
+            if designPreview { state.preferences.autoActivate = true }
             if includeShortcut, let key = state.shortcuts.first?.key {
                 try state.assign(nil, to: .arrange(.left))
                 try state.assign(key, to: .preset(focus.id))
             }
             _ = try store.write(state, replacing: initial)
             return focus.id
+        }
+
+        var previewSnapshot: WorkspaceSnapshot {
+            let original = snapshot
+            let windows = original.members.flatMap(\.windows)
+            guard let display = original.displays.primary else { return original }
+            let frame = CGRect(x: 780, y: 36, width: 620, height: 790)
+            let third = SavedWindow(id: UUID(), displayID: display.id, frame: frame,
+                                    relativeFrame: frame.relative(to: display.usable), order: 2)
+            let members = [
+                SavedApp(identity: AppIdentity(bundleID: nil, bundlePath: nil, name: "Editor"), windows: windows),
+                SavedApp(identity: AppIdentity(bundleID: nil, bundlePath: nil, name: "Browser"), windows: [third])
+            ]
+            return WorkspaceSnapshot(displays: original.displays, members: members, focusedWindow: original.focusedWindow)
         }
 
         private var snapshot: WorkspaceSnapshot {

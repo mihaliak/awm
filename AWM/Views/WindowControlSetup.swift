@@ -28,7 +28,7 @@ struct WindowControlSetup: View {
                         .measuredMenuRegion("Permission Settings icon")
                 }
                 .accessibilityHidden(true)
-                Text("In \(MacWindowSystem.permissionPaneName), turn on \(awmDisplayName). If it’s missing, use + to add the app shown in Finder.")
+                Text("In \(MacWindowSystem.permissionPaneName), turn on \(AWMIdentity.displayName). If it’s missing, use + to add the app shown in Finder.")
                     .font(.callout)
                     .foregroundStyle(MenuPalette.secondary)
                     .popoverProse()
@@ -36,7 +36,7 @@ struct WindowControlSetup: View {
             }
             .padding(.horizontal, 10)
             Button(action: allowWindowControl) {
-                MenuRowLabel("Allow Window Control…", icon: "lock.open")
+                MenuRowLabel("Allow Window Control…", icon: "lock.open", active: true)
             }
             .buttonStyle(MenuRowStyle(emphasized: true))
             .measuredMenuRegion("Allow Window Control row")
@@ -80,7 +80,7 @@ struct WindowControlConfirmation: View {
                 .padding(.horizontal, 10)
                 .measuredMenuRegion("Thanks for using AWM")
             Button(action: finish) {
-                MenuRowLabel("Let’s start", icon: "arrow.right")
+                MenuRowLabel("Let’s start", icon: "arrow.right", active: true)
             }
             .buttonStyle(MenuRowStyle(emphasized: true))
             .keyboardShortcut(.defaultAction)

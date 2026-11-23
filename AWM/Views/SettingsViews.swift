@@ -247,33 +247,67 @@ struct DisplaySettings: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker(selection: binding(\.outsidePolicy)) {
-                ForEach(OutsidePolicy.allCases) { policy in Text(policy.label).tag(policy) }
-            } label: {
-                MenuRowLabel("Other apps", icon: "square.on.square")
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                settingText("Other apps", note: "When restoring a workspace")
+                    .accessibilityHidden(true)
+                Spacer(minLength: 4)
+                Menu {
+                    Picker("Other apps", selection: binding(\.outsidePolicy)) {
+                        ForEach(OutsidePolicy.allCases) { policy in Text(policy.label).tag(policy) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.inline)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(model.state.preferences.outsidePolicy.label)
+                            .font(.system(size: 13))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(MenuPalette.secondary)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(height: 30)
+                    .background(MenuPalette.control, in: RoundedRectangle(cornerRadius: 9))
+                    .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(MenuPalette.border).allowsHitTesting(false) }
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel("Other apps")
+                .accessibilityValue(model.state.preferences.outsidePolicy.label)
             }
-            .pickerStyle(.menu)
-            .menuRowHeight()
-            .padding(.horizontal, 10)
-            SettingsSwitch("Launch missing apps", icon: "arrow.up.right.square", isOn: binding(\.launchMissing))
-            SettingsSwitch("Show apps and windows during restore", icon: "eye", isOn: binding(\.revealMembers))
+            .frame(minHeight: MenuMetrics.workspaceRowHeight)
+            .padding(.horizontal, 14)
+            MenuSeparator()
+            SettingsSwitch("Launch missing apps", icon: nil, isOn: binding(\.launchMissing))
+            SettingsSwitch("Show apps and windows during restore", icon: nil, isOn: binding(\.revealMembers),
+                           note: "Unhide apps and restore minimized windows.")
                 .help("Show hidden apps, restore minimized windows, and ask running apps to show their withdrawn windows.")
-            Divider()
-            SettingsSwitch("Restore a workspace when displays change", icon: "display.2",
-                           isOn: binding(\.autoActivate),
-                           note: "Choose one workspace for each saved display arrangement.")
+            MenuSeparator()
+            Text("Display changes")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(MenuPalette.secondary)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+            SettingsSwitch("Restore a workspace when displays change", icon: nil, isOn: binding(\.autoActivate),
+                           note: "Choose one workspace per display arrangement.")
             if model.state.presets.isEmpty {
                 SettingsNote("Save a workspace to associate it with your displays.")
+                    .padding(.bottom, 8)
             }
             ForEach(model.state.presets) { preset in
-                SettingsSwitch(preset.name, icon: preset.icon.symbol, isOn: Binding(
+                SettingsSwitch(preset.name, icon: nil, isOn: Binding(
                     get: { model.state.preset(preset.id)?.followsDisplays ?? false },
                     set: { model.associate(preset.id, enabled: $0) }
                 ), note: (preset.automaticLayout ?? preset.snapshot.displays).screens.map(\.name).joined(separator: ", "))
                 .help(preset.name)
             }
         }
+        .menuCard()
         .disabled(!model.canSave)
     }
 
@@ -286,7 +320,7 @@ struct GeneralSettings: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             SettingsSwitch("Launch at login", icon: "power", isOn: Binding(
                 get: { model.state.preferences.launchAtLogin },
                 set: { model.setLogin($0) }
@@ -296,12 +330,31 @@ struct GeneralSettings: View {
                 Button { model.openLoginSettings() } label: {
                     MenuRowLabel("Approve in Login Items…", icon: "checkmark.shield")
                 }
+                .buttonStyle(MenuRowStyle(inCard: true))
             }
+            MenuSeparator()
             SettingsSwitch("Restore last active workspace on launch", icon: "clock.arrow.circlepath", isOn: Binding(
                 get: { model.state.preferences.restoreOnLaunch },
                 set: { model.set(\.restoreOnLaunch, $0) }
             ))
             .disabled(!model.canSave)
+        }
+        .menuCard()
+    }
+}
+
+@MainActor
+private func settingText(_ title: String, note: String?) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+            .font(.system(size: 13))
+            .fixedSize(horizontal: false, vertical: true)
+            .measuredMenuRegion("Text: \(title)")
+        if let note, !note.isEmpty {
+            Text(note)
+                .font(.system(size: 12))
+                .foregroundStyle(MenuPalette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -310,11 +363,11 @@ private struct SettingsSwitch: View {
     @Environment(\.isEnabled) private var enabled
 
     let title: String
-    let icon: String
+    let icon: String?
     let isOn: Binding<Bool>
     let note: String?
 
-    init(_ title: String, icon: String, isOn: Binding<Bool>, note: String? = nil) {
+    init(_ title: String, icon: String?, isOn: Binding<Bool>, note: String? = nil) {
         self.title = title
         self.icon = icon
         self.isOn = isOn
@@ -322,28 +375,67 @@ private struct SettingsSwitch: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: 8) {
             HStack(spacing: 8) {
-                MenuRowLabel(title, icon: icon)
-                    .accessibilityHidden(true)
-                    .onTapGesture {
-                        if enabled { isOn.wrappedValue.toggle() }
-                    }
-                Spacer(minLength: 0)
-                Toggle(title, isOn: isOn)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .tint(MenuPalette.accent)
-                    .fixedSize()
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(MenuPalette.secondary)
+                        .frame(width: 22)
+                }
+                settingText(title, note: note)
             }
-            .menuRowHeight()
-            .measuredMenuRegion("Switch: \(title)")
-            .padding(.horizontal, 10)
-            if let note, !note.isEmpty {
-                SettingsNote(note)
+            .accessibilityHidden(true)
+            .onTapGesture {
+                if enabled { isOn.wrappedValue.toggle() }
             }
+            .layoutPriority(1)
+            Spacer(minLength: 0)
+            Toggle(title, isOn: isOn)
+                .toggleStyle(MenuToggleStyle())
+                .accessibilityHint(note ?? "")
+                .fixedSize()
         }
+        .padding(.vertical, note == nil ? 0 : 7)
+        .frame(minHeight: icon == nil ? MenuMetrics.workspaceRowHeight : MenuMetrics.rowHeight)
+        .measuredMenuRegion("Switch: \(title)")
+        .padding(.horizontal, 14)
         .measuredMenuRegion("Switch group: \(title)")
+    }
+}
+
+private struct MenuToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            Capsule()
+                .fill(configuration.isOn ? MenuPalette.accent : MenuPalette.control)
+                .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                    Circle()
+                        .fill(configuration.isOn ? MenuPalette.surface : MenuPalette.secondary)
+                        .frame(width: 15, height: 15)
+                        .padding(4)
+                }
+                .frame(width: 38, height: 23)
+        }
+        .buttonStyle(SwitchButtonStyle())
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+                .toggleStyle(.switch)
+        }
+    }
+
+    private struct SwitchButtonStyle: ButtonStyle {
+        @Environment(\.isFocused) private var focused
+        @Environment(\.isEnabled) private var enabled
+        private var focusBorder: Color { MenuPalette.focus.opacity(focused ? 1 : 0) }
+
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .overlay {
+                    Capsule().inset(by: -2).strokeBorder(focusBorder, lineWidth: 2)
+                        .allowsHitTesting(false)
+                }
+                .opacity(enabled && !configuration.isPressed ? 1 : 0.6)
+        }
     }
 }
