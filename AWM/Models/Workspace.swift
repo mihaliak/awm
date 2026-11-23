@@ -147,7 +147,7 @@ struct LiveApp: Equatable {
 
 struct LiveWindow<Handle: Hashable> {
     let handle: Handle
-    let frame: CGRect
+    let frame: CGRect?
     let order: Int
     var minimized: Bool
     var onScreen: Bool

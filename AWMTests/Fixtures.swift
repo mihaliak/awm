@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 @testable import AWM
 
@@ -21,6 +22,30 @@ func liveApp(_ name: String, pid: pid_t, hidden: Bool = false) -> LiveApp {
     LiveApp(pid: pid, identity: identity(name), hidden: hidden)
 }
 
+func rexApp(pid: pid_t) -> LiveApp {
+    LiveApp(pid: pid, identity: AppIdentity(bundleID: "com.superlogical.rex", bundlePath: nil, name: "Rex"),
+            hidden: false)
+}
+
+func menuBackingRows(pid: pid_t) -> [[String: Any]] {
+    [
+        windowServerRow(pid, CGRect(x: 0, y: 0, width: 5120, height: 30), onScreen: false),
+        windowServerRow(pid, CGRect(x: 0, y: 0, width: 1512, height: 33)),
+        windowServerRow(pid, CGRect(x: 0, y: 0, width: 84, height: 77), layer: 3, onScreen: false),
+    ]
+}
+
+func windowServerRow(_ pid: pid_t, _ frame: CGRect, layer: Int = 0, alpha: Double = 1,
+                     onScreen: Bool = true) -> [String: Any] {
+    [
+        kCGWindowOwnerPID as String: pid,
+        kCGWindowLayer as String: layer,
+        kCGWindowAlpha as String: alpha,
+        kCGWindowIsOnscreen as String: onScreen,
+        kCGWindowBounds as String: frame.dictionaryRepresentation,
+    ]
+}
+
 func window(_ index: Int, minimized: Bool = false, visible: Bool = true, frame: CGRect? = nil,
             order: Int? = nil) -> LiveWindow<Int> {
     LiveWindow(handle: index, frame: frame ?? CGRect(x: 30 * index, y: 50, width: 360, height: 400),
@@ -29,8 +54,9 @@ func window(_ index: Int, minimized: Bool = false, visible: Bool = true, frame: 
 }
 
 func saved(_ from: LiveWindow<Int>, display: DisplaySnapshot = referenceDisplay) -> SavedWindow {
-    SavedWindow(id: UUID(), displayID: display.id, frame: from.frame,
-                relativeFrame: from.frame.relative(to: display.usable), order: from.order)
+    guard let frame = from.frame else { preconditionFailure("A saved window fixture needs a frame") }
+    return SavedWindow(id: UUID(), displayID: display.id, frame: frame,
+                       relativeFrame: frame.relative(to: display.usable), order: from.order)
 }
 
 func preset(_ members: [SavedApp], focusedWindow: UUID? = nil, layout: DisplayLayout = referenceLayout,
@@ -55,10 +81,14 @@ final class WindowFixture: WindowSystem {
     var unreadable: Set<Int> = []
     var restricted: Set<Int> = []
     var constrained: Set<Int> = []
+    var placementOverride: ((Int, CGRect) -> Placement?)?
     var canReveal = true
     var launches: [String: (LiveApp, [LiveWindow<Int>])] = [:]
     var unresolvedLaunches: Set<String> = []
     var withdrawnPIDs: Set<pid_t> = []
+    var reopenRows: [[String: Any]]?
+    var unavailableAXLists: Set<pid_t> = []
+    var otherAXWindows: Set<pid_t> = []
     var events: [String] = []
     var onLaunch: (() -> Void)?
 
@@ -68,16 +98,16 @@ final class WindowFixture: WindowSystem {
         guard compositorAvailable else { return nil }
         return running.filter { !$0.hidden }.flatMap { app in
             (list[app.pid] ?? []).filter { $0.onScreen && !$0.minimized && !offSpace.contains($0.handle) }
-                .map { CompositedWindow(pid: app.pid, frame: $0.frame) }
+                .compactMap { window in window.frame.map { CompositedWindow(pid: app.pid, frame: $0) } }
         }
     }
 
     func windows(for app: LiveApp, on compositor: [CompositedWindow]?) -> [LiveWindow<Int>] {
+        guard !unavailableAXLists.contains(app.pid) else { return [] }
         let windows = (list[app.pid] ?? []).map { window in
-            var result = window
-            result.onScreen = false
-            result.fullScreen = fullScreen.contains(window.handle)
-            return result
+            LiveWindow(handle: window.handle, frame: unreadable.contains(window.handle) ? nil : window.frame,
+                       order: window.order, minimized: window.minimized, onScreen: false,
+                       fullScreen: fullScreen.contains(window.handle))
         }
         guard let compositor else { return windows }
         return LiveWindow.markOnScreen(windows, pid: app.pid, compositor: compositor,
@@ -85,17 +115,22 @@ final class WindowFixture: WindowSystem {
     }
 
     func restoreState(of window: Int, in app: LiveApp) -> RestoreWindowState {
-        guard !unreadable.contains(window),
-              let entry = list[app.pid]?.first(where: { $0.handle == window }),
+        guard let entry = list[app.pid]?.first(where: { $0.handle == window }),
               let current = running.first(where: { $0.pid == app.pid }) else { return .unreadable }
         if fullScreen.contains(window) { return .fullScreen }
         if current.hidden { return .hidden }
         if entry.minimized { return .minimized }
+        guard frame(for: window) != nil else { return .unreadable }
         guard let compositor = compositor() else { return .visibilityUnavailable }
         return windows(for: app, on: compositor).contains { $0.handle == window && $0.onScreen } ? .visible : .offScreen
     }
 
     func focusedWindow(pid: pid_t?) -> Int? { focus }
+
+    func frame(for window: Int) -> CGRect? {
+        guard !unreadable.contains(window), let (pid, index) = locate(window) else { return nil }
+        return list[pid]?[index].frame
+    }
 
     func windowTitle(for window: Int) -> String? {
         titleReads.append(window)
@@ -122,8 +157,12 @@ final class WindowFixture: WindowSystem {
         return unresolvedLaunches.contains(app.key)
     }
 
-    func requestReopen(_ app: LiveApp, knownWindows: [LiveWindow<Int>]) -> Bool {
-        guard withdrawnPIDs.contains(app.pid) else { return false }
+    func requestReopen(_ app: LiveApp, knownWindows: [LiveWindow<Int>], allowWindowless: Bool) -> Bool {
+        let eligible = WindowServerRows.shouldReopen(pid: app.pid, knownWindows: knownWindows, rows: reopenRows) {
+            allowWindowless && compositorAvailable && !unavailableAXLists.contains(app.pid) &&
+                !otherAXWindows.contains(app.pid) && (list[app.pid] ?? []).isEmpty
+        }
+        guard eligible || withdrawnPIDs.contains(app.pid) else { return false }
         events.append("reopen \(app.pid)")
         frontmostPID = app.pid
         return true
@@ -144,8 +183,10 @@ final class WindowFixture: WindowSystem {
         return true
     }
 
-    func place(_ window: Int, in frame: CGRect, animate: Bool) async -> Placement {
+    func place(_ window: Int, in target: WorkspaceWindowTarget, animate: Bool) async -> Placement {
+        let frame = target.frame
         events.append("place \(window)")
+        if let placement = placementOverride?(window, frame) { return placement }
         guard !restricted.contains(window), let (pid, index) = locate(window),
               let entry = list[pid]?[index] else { return .unavailable }
         list[pid]?[index] = LiveWindow(handle: window, frame: frame, order: entry.order,

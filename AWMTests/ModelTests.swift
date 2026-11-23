@@ -34,15 +34,23 @@ import Testing
     #expect(WindowServerRows.hasWithdrawnWindow(in: ignored + [known, known], pid: 100, knownOffscreenFrames: [frame]))
 }
 
-private func windowServerRow(_ pid: pid_t, _ frame: CGRect, layer: Int = 0, alpha: Double = 1,
-                             onScreen: Bool = true) -> [String: Any] {
-    [
-        kCGWindowOwnerPID as String: pid,
-        kCGWindowLayer as String: layer,
-        kCGWindowAlpha as String: alpha,
-        kCGWindowIsOnscreen as String: onScreen,
-        kCGWindowBounds as String: frame.dictionaryRepresentation,
-    ]
+@Test func windowlessReopenRequiresEmptyAXListAndNoVisibleWindowSizedSurfaces() {
+    let pid: pid_t = 100
+    let rows = menuBackingRows(pid: pid)
+    let noWindows: [LiveWindow<Int>] = []
+    let minimized = [window(1, minimized: true)]
+    let frame = CGRect(x: 200, y: 300, width: 500, height: 600)
+    let withdrawn = windowServerRow(pid, frame, onScreen: false)
+
+    #expect(WindowServerRows.shouldReopen(pid: pid, knownWindows: noWindows, rows: rows) { true })
+    #expect(!WindowServerRows.shouldReopen(pid: pid, knownWindows: noWindows, rows: rows) { false })
+    #expect(!WindowServerRows.shouldReopen(pid: pid, knownWindows: noWindows, rows: nil) { true })
+    #expect(!WindowServerRows.shouldReopen(pid: pid, knownWindows: minimized, rows: rows) { true })
+    #expect(WindowServerRows.shouldReopen(pid: pid, knownWindows: minimized, rows: rows + [withdrawn]) { false })
+    for layer in [0, 3] {
+        let visible = windowServerRow(pid, frame, layer: layer)
+        #expect(!WindowServerRows.shouldReopen(pid: pid, knownWindows: noWindows, rows: rows + [visible]) { true })
+    }
 }
 
 @Test func primaryCoordinateAnchorPreservesLeftAboveAndBelowDisplays() {
@@ -446,6 +454,33 @@ func invalidWindowFractionsAreRejected(input: String) {
 }
 
 extension NativeWindowTests {
+    @Test @MainActor func nativeWorkspacePlacementAlignsAnUnresizableWindowWithTheGap() async throws {
+        let system = MacWindowSystem()
+        let layout = system.displays()
+        let display = try #require(layout.primary)
+        let screen = try #require(NSScreen.screens.first)
+        let window = NSWindow(contentRect: CGRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY,
+                                                  width: 300, height: 230),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        defer { window.orderOut(nil) }
+        window.orderFrontRegardless()
+        let initial = DisplayLayout.accessibilityRect(window.frame, primaryTop: screen.frame.maxY)
+        let ownApp = liveApp("AWMTestHost", pid: getpid())
+        let live = try #require(system.windows(for: ownApp, on: nil).first { $0.frame?.isNear(initial) == true })
+        let frame = CGRect(x: display.usable.maxX - initial.width, y: initial.minY,
+                           width: initial.width, height: initial.height)
+        let slot = SavedWindow(id: UUID(), displayID: display.id, frame: frame,
+                               relativeFrame: frame.relative(to: display.usable), order: 0)
+        var preferences = Preferences()
+        preferences.windowGapUnit = .points
+        let target = try #require(layout.targets(for: [slot], from: layout, destinations: [display.id: display],
+                                                 preferences: preferences)[slot.id])
+        let expected = frame.offsetBy(dx: -CGFloat(preferences.windowGapPoints), dy: 0)
+        #expect(await system.place(live.handle, in: target, animate: false) == .gapAdjusted(expected))
+        let actual = try #require(system.frame(for: live.handle))
+        #expect(actual.isNear(expected))
+    }
+
     @Test @MainActor func nativePlacementCentersAndTilesOnlyTheTargetWindow() async throws {
         let system = MacWindowSystem()
         let layout = system.displays()
@@ -466,17 +501,17 @@ extension NativeWindowTests {
         let windows = system.windows(for: ownApp, on: nil)
         let targetFrame = DisplayLayout.accessibilityRect(target.frame, primaryTop: screen.frame.maxY)
         let bystanderFrame = DisplayLayout.accessibilityRect(bystander.frame, primaryTop: screen.frame.maxY)
-        let moving = try #require(windows.first { $0.frame.isNear(targetFrame) })
-        let other = try #require(windows.first { $0.frame.isNear(bystanderFrame) })
-        let display = try #require(layout.display(for: moving.frame))
+        let moving = try #require(windows.first { $0.frame?.isNear(targetFrame) == true })
+        let other = try #require(windows.first { $0.frame?.isNear(bystanderFrame) == true })
+        let display = try #require(layout.display(for: targetFrame))
         var cycles = WindowCycles<AXWindow>()
         let preferences = Preferences()
-        let centered = cycles.target(.centerWithoutResizing, window: moving.handle, frame: moving.frame,
+        let centered = cycles.target(.centerWithoutResizing, window: moving.handle, frame: targetFrame,
                                      usable: display.usable, preferences: preferences)
         let result = await system.place(moving.handle, at: centered, animate: true)
         #expect(result == .exact)
         let actual = try #require(system.frame(for: moving.handle))
-        #expect(actual.size == moving.frame.size)
+        #expect(actual.size == targetFrame.size)
         #expect(abs(actual.midX - display.usable.midX) <= 2)
         #expect(abs(actual.midY - display.usable.midY) <= 2)
         #expect(system.frame(for: other.handle) == other.frame)
@@ -514,14 +549,14 @@ extension NativeWindowTests {
         let live = system.windows(for: liveApp("AWMTestHost", pid: getpid()), on: nil)
         let leftFrame = DisplayLayout.accessibilityRect(windows[0].frame, primaryTop: screen.frame.maxY)
         let middleFrame = DisplayLayout.accessibilityRect(windows[1].frame, primaryTop: screen.frame.maxY)
-        let left = try #require(live.first { $0.frame.isNear(leftFrame) })
-        let middle = try #require(live.first { $0.frame.isNear(middleFrame) })
+        let left = try #require(live.first { $0.frame?.isNear(leftFrame) == true })
+        let middle = try #require(live.first { $0.frame?.isNear(middleFrame) == true })
         var preferences = Preferences()
         preferences.windowGapUnit = unit
         preferences.windowGapPercent = 2
         var cycles = WindowCycles<AXWindow>()
-        for (window, action) in [(left, ArrangementAction.left), (middle, .right)] {
-            let target = cycles.target(action, window: window.handle, frame: window.frame, usable: usable,
+        for (window, frame, action) in [(left, leftFrame, ArrangementAction.left), (middle, middleFrame, .right)] {
+            let target = cycles.target(action, window: window.handle, frame: frame, usable: usable,
                                        preferences: preferences)
             #expect(await system.place(window.handle, at: target, animate: animate) == .exact)
         }
@@ -643,7 +678,7 @@ private final class PlacementTrace {
     var adjustPosition: ((CGRect, CGPoint) -> CGRect)?
     var onSleep: ((Duration) -> Void)?
 
-    func place(_ target: WindowTarget, animate: Bool = true) async -> Placement {
+    func place(_ target: WindowTarget, animate: Bool = true, gap: WorkspaceWindowTarget.Gap? = nil) async -> Placement {
         let writer = WindowPlacement(
             readFrame: {
                 self.reads += 1
@@ -664,12 +699,43 @@ private final class PlacementTrace {
             self.time = deadline
             self.onSleep?(deadline)
         })
-        return await writer.place(target, animate: animate, timing: timing)
+        return await writer.place(target, animate: animate, timing: timing, gap: gap)
     }
 }
 
-@Test func matchingUsesVisibleWindowsFirstAndBreaksIdenticalGeometryTiesInInputOrder() {
-    let frame = window(1).frame
+@Test(arguments: [false, true]) @MainActor
+func workspacePlacementHonorsTheGapWithAFixedWidthWindow(atRightEdge: Bool) async throws {
+    let bounds = CGRect(x: -1819, y: -1500, width: 1420, height: 950)
+    let external = display("external", frame: bounds, primary: true)
+    let layout = DisplayLayout(screens: [external])
+    let size = CGSize(width: 400, height: 685)
+    let original = CGRect(x: atRightEdge ? bounds.maxX - size.width : bounds.minX, y: -1381,
+                          width: size.width, height: size.height)
+    let slot = saved(window(1, frame: original), display: external)
+    var preferences = Preferences()
+    preferences.windowGapUnit = .percentage
+    preferences.windowGapPercent = 1
+    let target = try #require(layout.targets(for: [slot], from: layout, destinations: [external.id: external],
+                                             preferences: preferences)[slot.id])
+    let gap = bounds.width * 0.01
+    #expect(abs(target.frame.width - (size.width - gap)) < 0.01)
+    let expected = CGRect(x: atRightEdge ? original.minX - gap : original.minX + gap, y: original.minY,
+                          width: size.width, height: size.height)
+    let fixed = PlacementTrace()
+    fixed.frame = original.offsetBy(dx: 80, dy: 60)
+    fixed.adjustSize = { frame, requested in CGSize(width: frame.width, height: requested.height) }
+    for _ in 0..<2 {
+        #expect(await fixed.place(.frame(target.frame), animate: false, gap: target.gap) == .gapAdjusted(expected))
+        #expect(fixed.frame.isNear(expected, tolerance: 0.01))
+    }
+    let resizable = PlacementTrace()
+    resizable.frame = original
+    #expect(await resizable.place(.frame(target.frame), animate: false, gap: target.gap) == .exact)
+    #expect(resizable.frame == target.frame)
+}
+
+@Test func matchingUsesVisibleWindowsFirstAndBreaksIdenticalGeometryTiesInInputOrder() throws {
+    let frame = try #require(window(1).frame)
     let first = saved(window(1, frame: frame, order: 0))
     let second = saved(window(2, frame: frame, order: 0))
     let candidates = [window(8, visible: false, frame: frame, order: 0),
@@ -757,14 +823,14 @@ private final class PlacementTrace {
     other.orderFrontRegardless()
     let ownApp = liveApp("AWMTestHost", pid: getpid())
     let nativeFrame = DisplayLayout.accessibilityRect(window.frame, primaryTop: screen.frame.maxY)
-    let moving = try #require(system.windows(for: ownApp, on: nil).first { $0.frame.isNear(nativeFrame) })
+    let moving = try #require(system.windows(for: ownApp, on: nil).first { $0.frame?.isNear(nativeFrame) == true })
     var preferences = Preferences()
     preferences.windowGapUnit = unit
     preferences.windowGapPoints = 20
     preferences.windowGapPercent = 2
     preferences.marginPercent = 6
     var cycles = WindowCycles<AXWindow>()
-    let centered = cycles.target(.center, window: moving.handle, frame: moving.frame,
+    let centered = cycles.target(.center, window: moving.handle, frame: nativeFrame,
                                  usable: usable, preferences: preferences)
     #expect(await system.place(moving.handle, at: centered, animate: true) == .exact)
     let almostFull = try #require(system.frame(for: moving.handle))

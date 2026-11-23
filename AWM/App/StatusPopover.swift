@@ -164,6 +164,8 @@ final class StatusPopover: NSObject {
         let reduceMotion = reduceMotion()
         panel.alphaValue = reduceMotion ? 1 : 0
         panel.makeKeyAndOrderFront(nil)
+        // Clear the focus chosen by AppKit when it makes the panel key.
+        panel.makeFirstResponder(nil)
         if !reduceMotion {
             NSAnimationContext.runAnimationGroup {
                 $0.duration = 0.19
@@ -471,8 +473,9 @@ final class StatusPopover: NSObject {
     }
 
     private func sendKey(_ keyCode: Int, characters: String, modifiers: NSEvent.ModifierFlags = [], isRepeat: Bool = false,
+                         kind: NSEvent.EventType = .keyDown,
                          to panel: NSPanel) throws {
-        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
+        guard let event = NSEvent.keyEvent(with: kind, location: .zero, modifierFlags: modifiers,
                                            timestamp: ProcessInfo.processInfo.systemUptime,
                                            windowNumber: panel.windowNumber, context: nil, characters: characters,
                                            charactersIgnoringModifiers: characters, isARepeat: isRepeat,
@@ -1172,6 +1175,9 @@ final class StatusPopover: NSObject {
         }
         verificationSnapshotDirectory = snapshots
         isVerifying = true
+        var restoreRequests: [UUID] = []
+        model.verificationRestore = { restoreRequests.append($0) }
+        defer { model.verificationRestore = nil }
         try check(NSApp.activationPolicy() == .accessory, "accessory app")
         let displays = model.system.displays()
         try check(displays.primary != nil && displays.screens.allSatisfy { $0.frame.contains($0.usable) },
@@ -1204,6 +1210,12 @@ final class StatusPopover: NSObject {
                   "panel stays below the menu bar (\(original.frame.maxY), expected \(top))")
         let wide = original.frame.width
         let homeRows = try ["Restore: Focus", "Restore: Vibing", "Manage: Focus"].map(region)
+        try check(original.firstResponder === original, "opening the menu leaves focus on the panel")
+        try sendKey(kVK_Return, characters: "\r", to: original)
+        try sendKey(kVK_Space, characters: " ", to: original)
+        try sendKey(kVK_Space, characters: " ", kind: .keyUp, to: original)
+        try await settleMenu()
+        try check(restoreRequests.isEmpty, "Return and Space after opening leave workspaces in place")
         let header = try region("Page header")
         let headerGap = homeRows[0].minY - header.maxY
         try check(abs(header.height - MenuMetrics.headerHeight) < 0.25
@@ -1432,6 +1444,26 @@ final class StatusPopover: NSObject {
         try await dispatchStatusAction("rapid reopen action dispatched")
         try await settleMenu()
         try check(panel?.isVisible == true && panel?.isKeyWindow == true, "rapid reopen keeps the newest panel visible and key")
+        guard let reopened = panel else { throw VerificationFailure(message: "reopened status panel unavailable") }
+        try check(reopened.firstResponder === reopened, "reopening the menu leaves focus on the panel")
+        try sendKey(kVK_Return, characters: "\r", to: reopened)
+        try await settleMenu()
+        try check(restoreRequests.isEmpty, "Return after reopening leaves workspaces in place")
+        if NSApp.isFullKeyboardAccessEnabled {
+            try sendKey(kVK_Tab, characters: "\t", to: reopened)
+            try check(reopened.firstResponder !== reopened, "Tab moves keyboard focus into the menu")
+            try await settleMenu()
+            try sendKey(kVK_Space, characters: " ", to: reopened)
+            try await Task.sleep(for: .milliseconds(32))
+            try sendKey(kVK_Space, characters: " ", kind: .keyUp, to: reopened)
+            try await waitUntil("Space did not activate the focused Restore button (\(restoreRequests.count) actions)") {
+                restoreRequests == [focus]
+            }
+            try check(restoreRequests == [focus], "Space activates Restore after Tab")
+        }
+        let previousRequests = restoreRequests
+        try await click("Restore Active Workspace")
+        try check(restoreRequests == previousRequests + [focus], "clicking Restore dispatches one workspace action")
 
         try await verifyWorkspaceMoves(store: store, focus: focus, longName: longName)
         try check(verificationRegions["Save Current Workspace…"] == nil

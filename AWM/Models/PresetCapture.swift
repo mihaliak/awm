@@ -38,7 +38,8 @@ struct PresetCapture {
             let available = member.windows.map {
                 LiveWindow(handle: $0.id, frame: $0.frame, order: $0.order, minimized: false, onScreen: true)
             }
-            selected.formUnion(WorkspaceMatching.windows(saved, with: available, targets: targets).map(\.live.handle))
+            selected.formUnion(WorkspaceMatching.windows(saved, with: available, targets: targets.mapValues(\.frame))
+                .map(\.live.handle))
         }
         initialSelection = selected
     }

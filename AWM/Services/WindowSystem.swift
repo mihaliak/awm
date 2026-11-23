@@ -1,7 +1,8 @@
 import Foundation
 
-enum Placement {
+enum Placement: Equatable {
     case exact
+    case gapAdjusted(CGRect)
     case constrained
     case unavailable
 
@@ -27,7 +28,8 @@ struct WindowPlacement {
     let setPosition: (CGPoint) -> Bool
     let setSize: (CGSize) -> Bool
 
-    func place(_ target: WindowTarget, animate: Bool, timing: Timing = .continuous()) async -> Placement {
+    func place(_ target: WindowTarget, animate: Bool, timing: Timing = .continuous(),
+               gap: WorkspaceWindowTarget.Gap? = nil) async -> Placement {
         guard !Task.isCancelled, let initial = readFrame() else { return .unavailable }
         let destination: CGRect
         let canResize: Bool
@@ -64,6 +66,16 @@ struct WindowPlacement {
                 actual = corrected
             }
             if actual.isNear(destination) { return .exact }
+            if let adjusted = gap?.adjustedFrame(for: actual.size, requested: destination) {
+                if !actual.isNear(adjusted) {
+                    write(adjusted, from: &actual, canResize: false, tolerance: 2)
+                    guard let measured = try await settledFrame(near: adjusted, timing: timing) else {
+                        return .unavailable
+                    }
+                    actual = measured
+                }
+                if actual.isNear(adjusted) { return .gapAdjusted(adjusted) }
+            }
             return actual.isNear(initial) ? .unavailable : .constrained
         } catch {
             return .unavailable
@@ -138,15 +150,16 @@ protocol WindowSystem: AnyObject {
     func compositor() -> [CompositedWindow]?
     func windows(for app: LiveApp, on compositor: [CompositedWindow]?) -> [LiveWindow<Handle>]
     func restoreState(of window: Handle, in app: LiveApp) -> RestoreWindowState
+    func frame(for window: Handle) -> CGRect?
     func focusedWindow(pid: pid_t?) -> Handle?
     func windowTitle(for window: Handle) -> String?
     func frontmostApp() -> LiveApp?
     func activate(_ app: LiveApp) -> Bool
     func requestLaunch(_ app: AppIdentity) -> Bool
-    func requestReopen(_ app: LiveApp, knownWindows: [LiveWindow<Handle>]) -> Bool
+    func requestReopen(_ app: LiveApp, knownWindows: [LiveWindow<Handle>], allowWindowless: Bool) -> Bool
     func setApp(_ app: LiveApp, hidden: Bool) -> Bool
     func setWindow(_ window: Handle, minimized: Bool) -> Bool
-    func place(_ window: Handle, in frame: CGRect, animate: Bool) async -> Placement
+    func place(_ window: Handle, in target: WorkspaceWindowTarget, animate: Bool) async -> Placement
     func raise(_ window: Handle, app: LiveApp, activate: Bool) -> Bool
 }
 
@@ -169,12 +182,13 @@ extension WindowSystem {
             let visible = windows(for: app, on: compositor).filter { $0.onScreen && !$0.minimized }
             var captured: [SavedWindow] = []
             for window in visible {
-                guard alreadySeen.insert(window.handle).inserted, let display = layout.display(for: window.frame)
+                guard let frame = window.frame, alreadySeen.insert(window.handle).inserted,
+                      let display = layout.display(for: frame)
                 else { continue }
                 let id = UUID()
                 if window.handle == focused { focusedID = id }
                 captured.append(SavedWindow(id: id, displayID: display.id,
-                                            frame: window.frame, relativeFrame: window.frame.relative(to: display.usable),
+                                            frame: frame, relativeFrame: frame.relative(to: display.usable),
                                             order: window.order))
             }
             guard !captured.isEmpty else { continue }

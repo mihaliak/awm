@@ -285,7 +285,7 @@ struct DisplaySettings: View {
             SettingsSwitch("Launch missing apps", icon: nil, isOn: binding(\.launchMissing))
             SettingsSwitch("Show apps and windows during restore", icon: nil, isOn: binding(\.revealMembers),
                            note: "Unhide apps and restore minimized windows.")
-                .help("Show hidden apps, restore minimized windows, and ask running apps to show their withdrawn windows.")
+                .help("Show hidden apps and restore minimized windows. A Dock-style reopen lets a running app show an existing window, open a default window, or do nothing. It cannot restore a specific closed document.")
             MenuSeparator()
             Text("Display changes")
                 .font(.system(size: 12, weight: .medium))

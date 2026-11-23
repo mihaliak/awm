@@ -25,14 +25,28 @@ enum WindowServerRows {
         }
     }
 
+    static func shouldReopen<Handle>(pid: pid_t, knownWindows: [LiveWindow<Handle>],
+                                    rows: [[String: Any]]?, confirmEmptyAXList: () -> Bool) -> Bool {
+        guard let rows else { return false }
+        // Account for the minimized and off-Space windows AX already reported.
+        let knownOffscreen = knownWindows.filter { !$0.onScreen }
+        let knownFrames = knownOffscreen.compactMap(\.frame)
+        guard knownOffscreen.count == knownFrames.count else { return false }
+        if hasWithdrawnWindow(in: rows, pid: pid, knownOffscreenFrames: knownFrames) { return true }
+        guard knownWindows.isEmpty, !rows.contains(where: { row in
+            belongsToApp(row, pid: pid) && (row[kCGWindowIsOnscreen as String] as? Bool) == true &&
+                windowSizedFrame(row) != nil
+        }) else { return false }
+        return confirmEmptyAXList()
+    }
+
     static func hasWithdrawnWindow(in rows: [[String: Any]], pid: pid_t, knownOffscreenFrames: [CGRect]) -> Bool {
         var knownFrames = knownOffscreenFrames
         return rows.contains { row in
-            guard (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
+            guard belongsToApp(row, pid: pid),
                   (row[kCGWindowIsOnscreen as String] as? Bool) != true,
-                  let frame = normalFrame(row),
-                  // An app's menu bar backing surfaces can also have layer zero.
-                  min(frame.width, frame.height) >= 48 else { return false }
+                  (row[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+                  let frame = windowSizedFrame(row) else { return false }
             guard let match = knownFrames.firstIndex(where: { $0.isNear(frame, tolerance: 4) }) else { return true }
             knownFrames.remove(at: match)
             return false
@@ -40,8 +54,22 @@ enum WindowServerRows {
     }
 
     private static func normalFrame(_ row: [String: Any]) -> CGRect? {
-        guard (row[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
-              let bounds = row[kCGWindowBounds as String] as? [String: Any],
+        guard (row[kCGWindowLayer as String] as? NSNumber)?.intValue == 0 else { return nil }
+        return frame(row)
+    }
+
+    private static func belongsToApp(_ row: [String: Any], pid: pid_t) -> Bool {
+        (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid
+    }
+
+    private static func windowSizedFrame(_ row: [String: Any]) -> CGRect? {
+        // Menu bar backing surfaces can also have layer zero.
+        guard let frame = frame(row), min(frame.width, frame.height) >= 48 else { return nil }
+        return frame
+    }
+
+    private static func frame(_ row: [String: Any]) -> CGRect? {
+        guard let bounds = row[kCGWindowBounds as String] as? [String: Any],
               let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary), frame.isUsableWindowFrame
         else { return nil }
         return frame
@@ -116,10 +144,10 @@ final class MacWindowSystem: WindowSystem {
         guard let elements = attribute(element, kAXWindowsAttribute) as? [AXUIElement] else { return [] }
         var seen = Set<AXWindow>()
         let windows: [LiveWindow<AXWindow>] = elements.enumerated().compactMap { index, element in
-            guard isManaged(element), let frame = frame(of: element) else { return nil }
+            guard isManaged(element) else { return nil }
             let window = AXWindow(element: element, pid: app.pid)
             guard seen.insert(window).inserted else { return nil }
-            return LiveWindow(handle: window, frame: frame, order: index,
+            return LiveWindow(handle: window, frame: frame(of: element), order: index,
                               minimized: flag(element, kAXMinimizedAttribute), onScreen: false,
                               fullScreen: flag(element, "AXFullScreen"))
         }
@@ -129,12 +157,12 @@ final class MacWindowSystem: WindowSystem {
     }
 
     func restoreState(of window: AXWindow, in app: LiveApp) -> RestoreWindowState {
-        guard let running = NSRunningApplication(processIdentifier: app.pid), !running.isTerminated,
-              let actual = frame(for: window) else { return .unreadable }
+        guard let running = runningApplication(for: app) else { return .unreadable }
         // AXFullScreen is exposed by standard windows that support native full screen.
         if flag(window.element, "AXFullScreen") { return .fullScreen }
         if running.isHidden { return .hidden }
         if flag(window.element, kAXMinimizedAttribute) { return .minimized }
+        guard let actual = frame(for: window) else { return .unreadable }
         guard let compositor = compositor() else { return .visibilityUnavailable }
         return compositor.contains { $0.pid == app.pid && actual.isNear($0.frame, tolerance: 4) }
             ? .visible : .offScreen
@@ -196,18 +224,19 @@ final class MacWindowSystem: WindowSystem {
         return true
     }
 
-    func requestReopen(_ app: LiveApp, knownWindows: [LiveWindow<AXWindow>]) -> Bool {
+    func requestReopen(_ app: LiveApp, knownWindows: [LiveWindow<AXWindow>], allowWindowless: Bool) -> Bool {
+        guard let running = runningApplication(for: app), running.activationPolicy == .regular,
+              !running.isHidden, let url = running.bundleURL, url.pathExtension.lowercased() == "app"
+        else { return false }
         let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
-        guard let entries = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            return false
+        let rows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]
+        let shouldReopen = WindowServerRows.shouldReopen(pid: app.pid, knownWindows: knownWindows, rows: rows) {
+            guard allowWindowless, compositor() != nil else { return false }
+            // Check the unfiltered AX list so a sheet, unsupported window, or failed read blocks this fallback.
+            let element = AXUIElementCreateApplication(app.pid)
+            return (attribute(element, kAXWindowsAttribute) as? [AXUIElement])?.isEmpty == true
         }
-        // An ordered-out window may still have WindowServer bounds while absent from AXWindows.
-        // Account for the minimized and off-Space windows AX already reported.
-        let knownFrames = knownWindows.filter { !$0.onScreen }.map(\.frame)
-        let hasWithdrawnWindow = WindowServerRows.hasWithdrawnWindow(in: entries, pid: app.pid, knownOffscreenFrames: knownFrames)
-        guard hasWithdrawnWindow, let running = runningApplication(for: app),
-              running.activationPolicy == .regular, !running.isHidden,
-              let url = running.bundleURL, url.pathExtension.lowercased() == "app" else { return false }
+        guard shouldReopen, !running.isTerminated, !running.isHidden else { return false }
 
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
@@ -227,22 +256,24 @@ final class MacWindowSystem: WindowSystem {
 
     func setWindow(_ window: AXWindow, minimized: Bool) -> Bool {
         let element = window.element
-        if flag(element, kAXMinimizedAttribute) == minimized { return true }
+        if (attribute(element, kAXMinimizedAttribute) as? NSNumber)?.boolValue == minimized { return true }
         let value = NSNumber(value: minimized)
         return AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, value) == .success
     }
 
-    func place(_ window: AXWindow, in target: CGRect, animate: Bool) async -> Placement {
-        await place(window, at: .frame(target), animate: animate)
+    func place(_ window: AXWindow, in target: WorkspaceWindowTarget, animate: Bool) async -> Placement {
+        await place(window, at: .frame(target.frame), animate: animate, gap: target.gap)
     }
 
-    func place(_ window: AXWindow, at target: WindowTarget, animate: Bool) async -> Placement {
+    func place(_ window: AXWindow, at target: WindowTarget, animate: Bool,
+               gap: WorkspaceWindowTarget.Gap? = nil) async -> Placement {
         let placement = WindowPlacement(
             readFrame: { self.frame(for: window) },
             setPosition: { self.setPosition(window.element, $0) },
             setSize: { self.setSize(window.element, $0) }
         )
-        return await placement.place(target, animate: animate && !workspace.accessibilityDisplayShouldReduceMotion)
+        return await placement.place(target, animate: animate && !workspace.accessibilityDisplayShouldReduceMotion,
+                                     gap: gap)
     }
 
     func raise(_ window: AXWindow, app: LiveApp, activate: Bool) -> Bool {

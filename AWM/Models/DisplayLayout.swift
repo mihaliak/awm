@@ -85,6 +85,28 @@ struct DisplaySnapshot: Codable, Equatable, Identifiable {
     }
 }
 
+struct WorkspaceWindowTarget {
+    struct Gap {
+        let bounds: CGRect
+        let originalSize: CGSize
+
+        func adjustedFrame(for size: CGSize, requested frame: CGRect) -> CGRect? {
+            // Preserve an original dimension only when the gap reduced that dimension.
+            func fits(_ actual: CGFloat, requested: CGFloat, original: CGFloat) -> Bool {
+                abs(actual - requested) <= 2 || (original > requested && abs(actual - original) <= 2)
+            }
+            guard fits(size.width, requested: frame.width, original: originalSize.width),
+                  fits(size.height, requested: frame.height, original: originalSize.height) else { return nil }
+            let x = max(bounds.minX, min(frame.minX, bounds.maxX - size.width))
+            let y = max(bounds.minY, min(frame.minY, bounds.maxY - size.height))
+            return CGRect(origin: CGPoint(x: x, y: y), size: size)
+        }
+    }
+
+    let frame: CGRect
+    let gap: Gap?
+}
+
 struct DisplayLayout: Codable, Equatable {
     let screens: [DisplaySnapshot]
 
@@ -136,6 +158,12 @@ struct DisplayLayout: Codable, Equatable {
 
     func target(for window: SavedWindow, from original: DisplayLayout,
                 destinations: [String: DisplaySnapshot], preferences: Preferences, salt: UUID? = nil) -> CGRect? {
+        workspaceTarget(for: window, from: original, destinations: destinations, preferences: preferences, salt: salt)?.frame
+    }
+
+    private func workspaceTarget(for window: SavedWindow, from original: DisplayLayout,
+                                 destinations: [String: DisplaySnapshot], preferences: Preferences,
+                                 salt: UUID?) -> WorkspaceWindowTarget? {
         guard let source = original.screens.first(where: { $0.id == window.displayID }),
               let display = destinations[source.id] ?? primary else { return nil }
         let bounds = display.usable
@@ -151,21 +179,23 @@ struct DisplayLayout: Codable, Equatable {
                            width: size.width, height: size.height).fitted(in: bounds)
         }
         let gap = preferences.windowGaps(in: bounds)
-        guard gap.horizontal > 0 || gap.vertical > 0 else { return frame }
+        guard gap.horizontal > 0 || gap.vertical > 0 else { return .init(frame: frame, gap: nil) }
         let inset = bounds.insetBy(dx: gap.horizontal, dy: gap.vertical)
-        guard !inset.contains(frame) else { return frame }
+        guard !inset.contains(frame) else { return .init(frame: frame, gap: nil) }
         let x = Self.insetSpan(frame.minX...frame.maxX, within: inset.minX...inset.maxX)
         let y = Self.insetSpan(frame.minY...frame.maxY, within: inset.minY...inset.maxY)
-        return CGRect(x: x.lowerBound, y: y.lowerBound,
-                      width: x.upperBound - x.lowerBound, height: y.upperBound - y.lowerBound)
+        let insetFrame = CGRect(x: x.lowerBound, y: y.lowerBound,
+                                width: x.upperBound - x.lowerBound, height: y.upperBound - y.lowerBound)
+        return .init(frame: insetFrame, gap: .init(bounds: inset, originalSize: frame.size))
     }
 
     func targets(for windows: [SavedWindow], from original: DisplayLayout,
-                 destinations: [String: DisplaySnapshot], preferences: Preferences, salt: UUID? = nil) -> [UUID: CGRect] {
-        var targets: [UUID: CGRect] = [:]
+                 destinations: [String: DisplaySnapshot], preferences: Preferences,
+                 salt: UUID? = nil) -> [UUID: WorkspaceWindowTarget] {
+        var targets: [UUID: WorkspaceWindowTarget] = [:]
         for window in windows {
-            targets[window.id] = target(for: window, from: original, destinations: destinations,
-                                        preferences: preferences, salt: salt)
+            targets[window.id] = workspaceTarget(for: window, from: original, destinations: destinations,
+                                                 preferences: preferences, salt: salt)
         }
         return targets
     }

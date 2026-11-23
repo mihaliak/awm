@@ -11,8 +11,8 @@ extension LiveWindow {
         guard !appHidden else { return windows }
         var visible = compositor.filter { $0.pid == pid }
         return windows.map { window in
-            guard !window.minimized,
-                  let index = visible.firstIndex(where: { window.frame.isNear($0.frame, tolerance: 4) })
+            guard !window.minimized, let frame = window.frame,
+                  let index = visible.firstIndex(where: { frame.isNear($0.frame, tolerance: 4) })
             else { return window }
             var match = window
             match.onScreen = true
@@ -38,7 +38,8 @@ enum WorkspaceMatching {
             for (liveIndex, candidate) in live.enumerated() {
                 let availability = candidate.fullScreen ? 2 : candidate.onScreen && !candidate.minimized ? 0 : 1
                 pairs.append((savedIndex, liveIndex, availability,
-                              distance(candidate.frame, target), abs(candidate.order - slot.order)))
+                              candidate.frame.map { distance($0, target) } ?? .infinity,
+                              abs(candidate.order - slot.order)))
             }
         }
         // Reserve exact destinations across the app before allowing approximate matches.

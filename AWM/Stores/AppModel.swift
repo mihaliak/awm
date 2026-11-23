@@ -46,6 +46,7 @@ final class AppModel: ObservableObject {
     #if DEBUG
     var verificationCapture: WorkspaceSnapshot?
     var verificationAuthorized = true
+    var verificationRestore: ((UUID) -> Void)?
     #endif
 
     private var windowControlAuthorized: Bool {
@@ -251,7 +252,10 @@ final class AppModel: ObservableObject {
 
     func activate(_ id: UUID) {
         #if DEBUG
-        if verificationCapture != nil { return }
+        if verificationCapture != nil {
+            verificationRestore?(id)
+            return
+        }
         #endif
         guard let preset = state.preset(id) else { return }
         arrangeWork?.task.cancel()
@@ -428,7 +432,7 @@ final class AppModel: ObservableObject {
             guard !Task.isCancelled else { return }
             self.arrangeWork = nil
             switch placement {
-            case .exact: break
+            case .exact, .gapAdjusted: break
             case .constrained:
                 self.errorLog.record(.arrange, .constrained, context: self.arrangementContext(pid: window.pid, window: window))
             case .unavailable:

@@ -641,14 +641,241 @@ func malformedYAMLValuesArePreserved(field: (String, String)) throws {
 
     #expect(result == RestoreReport(total: 3, placed: 3))
     #expect(system.events == [
-        "launch Terminal", "reveal Writer", "place 11", "raise 11", "unminimize 12",
-        "place 12", "raise 12", "place 31", "raise 31", "hide Outside", "focus 12"
+        "launch Terminal", "reveal Writer", "place 11", "unminimize 12",
+        "place 12", "raise 11", "raise 12", "place 31", "raise 31", "hide Outside", "focus 12"
     ])
     #expect(system.running.count == 3)
     await restore.request(work, preferences: Preferences()) { result = try? $0.get() }.value
     #expect(result?.placed == 3)
     #expect(system.events.filter { $0 == "launch Terminal" }.count == 1)
     #expect(!system.events.contains("launch Writer"))
+}
+
+@Test @MainActor func firstRestoreWaitsForStableCompositorBackedStartupWindows() async {
+    let system = WindowFixture()
+    let app = liveApp("Starting", pid: 10)
+    let destination = saved(window(3))
+    let work = preset([SavedApp(identity: app.identity, windows: [destination])])
+    system.launches[app.identity.key] = (app, [window(11)])
+    system.compositorAvailable = false
+    system.fullScreen = [11]
+    var time: Duration = .zero
+    let interval = Duration.milliseconds(100)
+    let timing = WindowPlacement.Timing(now: { time }, sleepUntil: { deadline in
+        time = deadline
+        if time <= interval * 5 { #expect(system.events == ["launch Starting"]) }
+        switch time {
+        case interval:
+            system.compositorAvailable = true
+        case interval * 2:
+            system.fullScreen = []
+            system.offSpace = [11]
+        case interval * 3:
+            system.offSpace = []
+        case interval * 4:
+            system.list[app.pid] = [window(11, frame: window(12).frame)]
+        default:
+            break
+        }
+    })
+    let restore = WorkspaceRestore(system: system, pollInterval: interval, launchTiming: timing)
+    var result: RestoreReport?
+    await restore.request(work, preferences: Preferences()) { result = try? $0.get() }.value
+
+    #expect(time == interval * 7)
+    #expect(result == RestoreReport(total: 1, placed: 1))
+    #expect(system.frame(for: 11) == destination.frame)
+    #expect(system.events == ["launch Starting", "place 11", "raise 11", "focus 11"])
+}
+
+@Test(arguments: [12, 22]) @MainActor func firstRestoreRetriesRejectedAndOverwrittenStartupWindows(secondHandle: Int) async {
+    let system = WindowFixture()
+    let app = liveApp("Starting", pid: 10)
+    let first = saved(window(1))
+    let second = saved(window(20))
+    let work = preset([SavedApp(identity: app.identity, windows: [first, second])], focusedWindow: second.id)
+    let startupWindow = window(12, frame: window(21).frame)
+    system.launches[app.identity.key] = (app, [window(11, frame: window(2).frame), startupWindow])
+    system.running = [liveApp("Outside", pid: 20)]
+    var rejected = false
+    system.placementOverride = { handle, _ in
+        guard handle == 11, !rejected else { return nil }
+        rejected = true
+        return .unavailable
+    }
+    var time: Duration = .zero
+    let interval = Duration.milliseconds(100)
+    let timing = WindowPlacement.Timing(now: { time }, sleepUntil: { deadline in
+        time = deadline
+        if time == interval * 2 {
+            #expect(system.frame(for: 12) == second.frame)
+            system.list[app.pid] = [window(11, frame: window(2).frame), window(secondHandle, frame: startupWindow.frame)]
+        }
+    })
+    let restore = WorkspaceRestore(system: system, pollInterval: interval, launchTiming: timing)
+    var result: RestoreReport?
+    await restore.request(work, preferences: Preferences()) { result = try? $0.get() }.value
+
+    #expect(result == RestoreReport(total: 2, placed: 2))
+    #expect(system.frame(for: 11) == first.frame && system.frame(for: secondHandle) == second.frame)
+    #expect(system.events == ["launch Starting", "place 11", "place 12", "place 11", "place \(secondHandle)",
+                              "raise 11", "raise \(secondHandle)", "hide Outside", "focus \(secondHandle)"])
+}
+
+@Test @MainActor func restoreSharesOneLaunchTimeoutAndStillPlacesRunningMembers() async {
+    let system = WindowFixture()
+    let starting = liveApp("Starting", pid: 10)
+    let running = liveApp("Running", pid: 20)
+    let unresolved = identity("Unresolved")
+    system.launches[starting.identity.key] = (starting, [window(11, minimized: true)])
+    system.unresolvedLaunches = [unresolved.key]
+    system.running = [running]
+    system.list[running.pid] = [window(21)]
+    let target = saved(window(3))
+    let work = preset([
+        SavedApp(identity: starting.identity, windows: [saved(window(1))]),
+        SavedApp(identity: unresolved, windows: [saved(window(2))]),
+        SavedApp(identity: running.identity, windows: [target])
+    ])
+    var time: Duration = .zero
+    let timing = WindowPlacement.Timing(now: { time }, sleepUntil: { deadline in
+        if system.events.contains("place 21") {
+            #expect(time == .milliseconds(250))
+        }
+        time = deadline
+    })
+    let restore = WorkspaceRestore(system: system, launchTimeout: .milliseconds(250),
+                                   pollInterval: .milliseconds(100), launchTiming: timing)
+    var preferences = Preferences()
+    preferences.revealMembers = false
+    var result: RestoreReport?
+    await restore.request(work, preferences: preferences) { result = try? $0.get() }.value
+
+    #expect(time == .milliseconds(300))
+    #expect(result?.placed == 1 && result?.issues == [.minimized, .appUnavailable])
+    #expect(system.frame(for: 21) == target.frame)
+    #expect(system.events == ["launch Starting", "launch Unresolved", "place 21", "raise 21", "focus 21"])
+}
+
+@Test @MainActor func cancellingStartupConfirmationSkipsRetriesAndFinalSideEffects() async {
+    let system = WindowFixture()
+    let app = liveApp("Starting", pid: 10)
+    system.launches[app.identity.key] = (app, [window(11)])
+    system.running = [liveApp("Outside", pid: 20)]
+    let work = preset([SavedApp(identity: app.identity, windows: [saved(window(1))])])
+    var request: Task<Void, Never>?
+    var time: Duration = .zero
+    let interval = Duration.milliseconds(100)
+    let timing = WindowPlacement.Timing(now: { time }, sleepUntil: { deadline in
+        time = deadline
+        if time == interval * 2 { request?.cancel() }
+    })
+    let restore = WorkspaceRestore(system: system, pollInterval: interval, launchTiming: timing)
+    var completed = false
+    request = restore.request(work, preferences: Preferences()) { _ in completed = true }
+    await request?.value
+
+    #expect(!completed)
+    #expect(system.events == ["launch Starting", "place 11"])
+}
+
+@Test(arguments: [12, 22]) @MainActor
+func restoreReacquiresAMinimizedWindowWithNoFrame(revealedHandle: Int) async {
+    let system = WindowFixture()
+    let app = liveApp("Terminal", pid: 10)
+    let first = saved(window(1))
+    let second = saved(window(2))
+    system.running = [app]
+    system.list[app.pid] = [window(11, frame: first.frame), window(12, minimized: true)]
+    system.unreadable = [12]
+    let work = preset([SavedApp(identity: app.identity, windows: [first, second])], focusedWindow: second.id)
+    var time: Duration = .zero
+    let timing = WindowPlacement.Timing(now: { time }, sleepUntil: { deadline in
+        time = deadline
+        guard time == .milliseconds(50) else { return }
+        #expect(system.events == ["place 11", "unminimize 12"])
+        if revealedHandle == 12 {
+            system.unreadable.remove(12)
+        } else {
+            system.list[app.pid]?.append(window(revealedHandle, frame: window(12).frame))
+        }
+    })
+    let restore = WorkspaceRestore(system: system, launchTiming: timing)
+    var result: RestoreReport?
+    await restore.request(work, preferences: Preferences()) { result = try? $0.get() }.value
+
+    #expect(result == RestoreReport(total: 2, placed: 2))
+    #expect(system.frame(for: 11) == first.frame && system.frame(for: revealedHandle) == second.frame)
+    #expect(system.events == ["place 11", "unminimize 12", "place \(revealedHandle)", "raise 11",
+                              "raise \(revealedHandle)", "focus \(revealedHandle)"])
+}
+
+@Test @MainActor func restoreRetriesRunningBrowserWhenItsFrameAppearsThenDrifts() async {
+    let system = WindowFixture()
+    let app = liveApp("Browser", pid: 10)
+    let destination = saved(window(1))
+    let original = window(11)
+    system.running = [app]
+    system.list[app.pid] = [original]
+    system.unreadable = [original.handle]
+    let work = preset([SavedApp(identity: app.identity, windows: [destination])])
+    var time: Duration = .zero
+    let timing = WindowPlacement.Timing(now: { time }, sleepUntil: { deadline in
+        time = deadline
+        switch time {
+        case .milliseconds(50):
+            system.unreadable.remove(original.handle)
+        case .milliseconds(100):
+            #expect(system.frame(for: original.handle) == destination.frame)
+            system.list[app.pid] = [original]
+        default:
+            break
+        }
+    })
+    let restore = WorkspaceRestore(system: system, launchTiming: timing)
+    var result: RestoreReport?
+    await restore.request(work, preferences: Preferences()) { result = try? $0.get() }.value
+
+    #expect(result == RestoreReport(total: 1, placed: 1))
+    #expect(system.frame(for: original.handle) == destination.frame)
+    #expect(system.events == ["place 11", "place 11", "raise 11", "focus 11"])
+}
+
+@Test @MainActor func restoreFindsAMissingWindowAfterActivationWithoutAnOpenRequest() async {
+    let system = WindowFixture()
+    let app = liveApp("Terminal", pid: 10)
+    system.running = [app]
+    let destination = saved(window(1))
+    let work = preset([SavedApp(identity: app.identity, windows: [destination])])
+    var polls = 0
+    let restore = WorkspaceRestore(system: system, waitForVisibilityUpdate: {
+        guard system.events == ["activate 10"] else { return }
+        polls += 1
+        if polls == 2 { system.list[app.pid] = [window(11)] }
+    })
+    var result: RestoreReport?
+    await restore.request(work, preferences: Preferences()) { result = try? $0.get() }.value
+
+    #expect(result == RestoreReport(total: 1, placed: 1))
+    #expect(system.frame(for: 11) == destination.frame)
+    #expect(system.events == ["activate 10", "place 11", "raise 11", "focus 11"])
+}
+
+@Test @MainActor func cancellationDuringRunningWindowConfirmationSkipsRetriesAndFinalSideEffects() async {
+    let system = WindowFixture()
+    let app = liveApp("Browser", pid: 10)
+    system.running = [app, liveApp("Outside", pid: 20)]
+    system.list[app.pid] = [window(11)]
+    let work = preset([SavedApp(identity: app.identity, windows: [saved(window(1))])])
+    let timing = WindowPlacement.Timing(now: { .zero }, sleepUntil: { _ in
+        withUnsafeCurrentTask { $0?.cancel() }
+    })
+    let restore = WorkspaceRestore(system: system, launchTiming: timing)
+    var completed = false
+    await restore.request(work, preferences: Preferences()) { _ in completed = true }.value
+
+    #expect(!completed)
+    #expect(system.events == ["place 11"])
 }
 
 @Test(arguments: OutsidePolicy.allCases)
@@ -710,7 +937,7 @@ func malformedYAMLValuesArePreserved(field: (String, String)) throws {
     await restore.request(work, preferences: prefs) { result = try? $0.get() }.value
     #expect(result?.placed == 0)
     #expect(result?.issues == [.placementFailed, .hidden, .notRunning])
-    #expect(system.events == ["place 11"])
+    #expect(system.events == Array(repeating: "place 11", count: 6))
 }
 
 @Test @MainActor func minimizingOtherAppsLeavesUnselectedSiblingsAndReportsFailure() async {
@@ -818,7 +1045,7 @@ func malformedYAMLValuesArePreserved(field: (String, String)) throws {
     #expect(result == RestoreReport(total: 3, placed: 3))
     #expect(polls == ["reveal Editor": 2, "unminimize 12": 2, "raise 21": 2])
     #expect(system.events == [
-        "reveal Editor", "place 11", "raise 11", "unminimize 12", "place 12", "raise 12", "raise 21", "place 21", "focus 21"
+        "reveal Editor", "place 11", "unminimize 12", "place 12", "raise 11", "raise 12", "raise 21", "place 21", "focus 21"
     ])
 }
 
@@ -867,7 +1094,7 @@ func malformedYAMLValuesArePreserved(field: (String, String)) throws {
 
     #expect(result == RestoreReport(total: 2, placed: 2))
     #expect(polls == 2)
-    #expect(system.events == ["reveal Editor", "place 11", "raise 11", "place 12", "raise 12", "focus 11"])
+    #expect(system.events == ["reveal Editor", "place 11", "place 12", "raise 11", "raise 12", "focus 11"])
 }
 
 @Test(arguments: [false, true])
@@ -905,38 +1132,85 @@ func malformedYAMLValuesArePreserved(field: (String, String)) throws {
     #expect(result == RestoreReport(total: 3, placed: 3))
     #expect(polls == 2)
     #expect(system.events == [
-        "reopen 10", "place 11", "raise 11", "place 12", "raise 12", "place 21",
+        "reopen 10", "place 11", "place 12", "raise 11", "raise 12", "place 21",
         "raise 21", "hide Outside", "focus 21"
     ])
     #expect(system.frontmostPID == 20)
 }
 
 @Test(arguments: [false, true])
-@MainActor func withdrawnWindowTimeoutKeepsOutsideAppsUntouched(focusChanged: Bool) async {
+@MainActor func restoreReopensRunningWindowlessAppsAndConfirmsTheirWindows(useRex: Bool) async {
+    let system = WindowFixture()
+    let app = useRex ? rexApp(pid: 10) : liveApp("Editor", pid: 10)
+    let slot = saved(window(1))
+    let work = preset([SavedApp(identity: app.identity, windows: [slot])], focusedWindow: slot.id)
+    system.running = [app]
+    system.reopenRows = menuBackingRows(pid: app.pid)
+    var polls = 0
+    var pollsAfterReopen = 0
+    let restore = WorkspaceRestore(system: system, waitForVisibilityUpdate: {
+        polls += 1
+        if system.events.last == "reopen 10" {
+            pollsAfterReopen += 1
+            if pollsAfterReopen == 2 { system.list[app.pid] = [window(11)] }
+        }
+    })
+    var preferences = Preferences()
+    preferences.revealMembers = false
+    preferences.launchMissing = false
+    var result: RestoreReport?
+    await restore.request(work, preferences: preferences) { result = try? $0.get() }.value
+
+    #expect(result?.issues == [.missing])
+    #expect(system.events.isEmpty)
+    #expect(polls == 0)
+
+    preferences.revealMembers = true
+    for _ in 0..<2 {
+        result = nil
+        await restore.request(work, preferences: preferences) { result = try? $0.get() }.value
+
+        #expect(result == RestoreReport(total: 1, placed: 1))
+        #expect(system.frame(for: 11) == slot.frame)
+        #expect(system.restoreState(of: 11, in: app) == .visible)
+        #expect(system.list[app.pid]?.map(\.handle) == [11])
+        #expect(system.events.filter { $0 == "reopen 10" }.count == 1)
+    }
+    #expect(polls == 5)
+    #expect(pollsAfterReopen == 2)
+}
+
+@Test(arguments: [false, true], [false, true])
+@MainActor func reopenTimeoutKeepsOutsideAppsUntouched(focusChanged: Bool, windowless: Bool) async {
     let system = WindowFixture()
     system.running = [liveApp("Editor", pid: 10), liveApp("Outside", pid: 20), liveApp("Other", pid: 30)]
-    system.withdrawnPIDs = [10, 20]
+    if windowless {
+        system.reopenRows = menuBackingRows(pid: 10)
+    } else {
+        system.withdrawnPIDs = [10, 20]
+    }
     system.frontmostPID = 20
     let slots = (1...20).map { saved(window($0)) }
     let work = preset([SavedApp(identity: identity("Editor"), windows: slots)])
     var polls = 0
     let restore = WorkspaceRestore(system: system, waitForVisibilityUpdate: {
         polls += 1
-        if focusChanged, polls == 1 { system.frontmostPID = 30 }
+        if focusChanged, system.events.last == "reopen 10" { system.frontmostPID = 30 }
     })
     var result: RestoreReport?
     await restore.request(work, preferences: Preferences()) { result = try? $0.get() }.value
 
     #expect(result?.placed == 0)
     #expect(result?.issues == Array(repeating: .missing, count: slots.count))
-    #expect(polls == 10)
+    #expect(polls == (windowless ? 13 : 10))
     #expect(system.events == (focusChanged ? ["reopen 10"] : ["reopen 10", "activate 20"]))
     #expect(system.frontmostPID == (focusChanged ? 30 : 20))
 }
 
-@Test @MainActor func restoreSkipsRecoveryForUnreportedWindowsAndWhenRevealIsDisabled() async {
+@Test @MainActor func restoreHonorsRevealOffAndFallsBackToActivationWhenInventoryIsUnavailable() async {
     let system = WindowFixture()
     system.running = [liveApp("Hidden", pid: 10, hidden: true), liveApp("Editor", pid: 20), liveApp("Closed", pid: 30)]
+    system.frontmostPID = 20
     system.withdrawnPIDs = [20]
     let work = preset([
         SavedApp(identity: identity("Hidden"), windows: [saved(window(1))]),
@@ -955,6 +1229,79 @@ func malformedYAMLValuesArePreserved(field: (String, String)) throws {
     let closedOnly = preset([SavedApp(identity: identity("Closed"), windows: [saved(window(3))])])
     await restore.request(closedOnly, preferences: Preferences()) { result = try? $0.get() }.value
     #expect(result?.issues == [.missing])
+    #expect(system.events == ["activate 30", "activate 20"])
+}
+
+@Test(arguments: [false, true])
+@MainActor func restoreWaitsForALateWindowBeforeReopening(hidden: Bool) async {
+    let system = WindowFixture()
+    let app = liveApp("Editor", pid: 10, hidden: hidden)
+    let slot = saved(window(1))
+    let work = preset([SavedApp(identity: app.identity, windows: [slot])])
+    system.running = [app]
+    system.reopenRows = menuBackingRows(pid: app.pid)
+    var polls = 0
+    let restore = WorkspaceRestore(system: system, waitForVisibilityUpdate: {
+        polls += 1
+        if polls == 3 { system.list[app.pid] = [window(11)] }
+    })
+    var result: RestoreReport?
+    await restore.request(work, preferences: Preferences()) { result = try? $0.get() }.value
+
+    #expect(result == RestoreReport(total: 1, placed: 1))
+    #expect(system.frame(for: 11) == slot.frame)
+    #expect(system.events == (hidden ? ["reveal Editor"] : []) + ["place 11", "raise 11", "focus 11"])
+}
+
+private enum WindowlessReopenBlocker: CaseIterable {
+    case partialInventory, unavailableAXList, unavailableCompositor, unavailableServerRows
+    case additionalInstance, unmanagedAXWindow, visibleServerSurface, newlyLaunched
+}
+
+@Test(arguments: WindowlessReopenBlocker.allCases)
+@MainActor private func restoreSkipsWindowlessReopenWhenItCannotConfirmAbsence(_ blocker: WindowlessReopenBlocker) async {
+    let system = WindowFixture()
+    let app = liveApp("Editor", pid: 10)
+    let live = window(11)
+    let work = preset([SavedApp(identity: app.identity, windows: [saved(window(1)), saved(window(2))])])
+    system.running = [app]
+    system.reopenRows = menuBackingRows(pid: app.pid)
+    switch blocker {
+    case .partialInventory: system.list[app.pid] = [live]
+    case .unavailableAXList: system.unavailableAXLists = [app.pid]
+    case .unavailableCompositor: system.compositorAvailable = false
+    case .unavailableServerRows: system.reopenRows = nil
+    case .additionalInstance: system.running.append(liveApp("Editor", pid: 12))
+    case .unmanagedAXWindow: system.otherAXWindows = [app.pid]
+    case .visibleServerSurface: system.reopenRows?.append(windowServerRow(app.pid, CGRect(x: 0, y: 50, width: 200, height: 300)))
+    case .newlyLaunched:
+        system.running = []
+        system.launches[app.identity.key] = (app, [])
+    }
+    let restore = WorkspaceRestore(system: system, launchTimeout: .zero, waitForVisibilityUpdate: {})
+    var result: RestoreReport?
+    await restore.request(work, preferences: Preferences()) { result = try? $0.get() }.value
+
+    #expect(!system.events.contains("reopen 10"))
+    #expect(!system.events.contains("reopen 12"))
+    #expect(result?.placed == (blocker == .partialInventory ? 1 : 0))
+    #expect(result?.issues == (blocker == .partialInventory ? [.missing] : [.missing, .missing]))
+    #expect(system.events.contains("launch Editor") == (blocker == .newlyLaunched))
+}
+
+@Test @MainActor func cancellationBeforeWindowlessReopenSkipsRecoveryAndPlacement() async {
+    let system = WindowFixture()
+    let app = liveApp("Editor", pid: 10)
+    let work = preset([SavedApp(identity: app.identity, windows: [saved(window(1))])])
+    system.running = [app]
+    system.reopenRows = menuBackingRows(pid: app.pid)
+    let restore = WorkspaceRestore(system: system, waitForVisibilityUpdate: {
+        withUnsafeCurrentTask { $0?.cancel() }
+    })
+    var completed = false
+    await restore.request(work, preferences: Preferences()) { _ in completed = true }.value
+
+    #expect(!completed)
     #expect(system.events.isEmpty)
 }
 
